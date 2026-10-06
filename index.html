@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Export Crates — kisten ontwikkelen, tekenen & bestellen</title>
+  <meta name="description" content="Export Crates adviseert op basis van uw product, bestemming en vrachtsoort het juiste exportkisttype — met ontwerp, tekening, optimalisatie en prijs." />
+  <meta name="theme-color" content="#1f6b4a" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <!-- Deel-weergave (link delen in WhatsApp, e-mail, social) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Export Crates" />
+  <meta property="og:description" content="Van product naar het juiste exportkisttype — met ontwerp, tekening, optimalisatie en prijs." />
+  <meta property="og:site_name" content="Export Crates" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="merk">
+      <div class="merk-logo">▣</div>
+      <div>
+        <div class="merk-naam">Export&nbsp;Crates</div>
+        <div class="merk-sub">kisten ontwikkelen · tekenen · optimaliseren · bestellen</div>
+      </div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-acties">
+      <button class="btn ghost" id="btn-print">Afdrukken</button>
+    </div>
+  </header>
+
+  <!-- Module-navigatie -->
+  <nav class="modnav" id="modnav">
+    <button data-mod="ontwikkelen" class="actief"><span class="ic">🧭</span> Adviseur</button>
+    <button data-mod="tekenen" disabled><span class="ic">📐</span> Tekenen <span class="badge">in advies</span></button>
+    <button data-mod="optimaliseren" disabled><span class="ic">📦</span> Optimaliseren <span class="badge">binnenkort</span></button>
+    <button data-mod="bestellen" disabled><span class="ic">🧾</span> Bestellen <span class="badge">binnenkort</span></button>
+  </nav>
+
+  <!-- ===================== MODULE: ADVISEUR (wizard) ===================== -->
+  <main class="wrap" id="mod-ontwikkelen">
+    <div class="module-kop">
+      <h2>Kist-adviseur</h2>
+      <p>Geef het product, de bestemming en de vrachtsoort. De app stelt een kisttype voor, met ontwerp, tekening, optimalisatie en kostprijs.</p>
+    </div>
+
+    <!-- Stepper -->
+    <ol class="stepper" id="stepper">
+      <li data-step="1" class="actief"><span class="n">1</span> Product</li>
+      <li data-step="2"><span class="n">2</span> Bestemming &amp; vracht</li>
+      <li data-step="3"><span class="n">3</span> Advies</li>
+    </ol>
+
+    <!-- STAP 1: PRODUCT -->
+    <section class="stap" id="stap-1">
+      <div class="config-grid">
+        <div class="kaart">
+          <div class="kaart-kop">Producttekening</div>
+          <div class="kaart-body">
+            <div class="upload" id="upload-zone">
+              <input type="file" id="f-tekening" accept="image/*,application/pdf" hidden />
+              <div id="upload-leeg">
+                <div class="ic">📄⬆️</div>
+                <p>Sleep een tekening hierheen of <button type="button" class="link" id="btn-kies">kies een bestand</button></p>
+                <p class="muted small">Afbeelding of PDF. De maten vul je hieronder in; automatisch uitlezen volgt later.</p>
+              </div>
+              <div id="upload-preview" class="hidden">
+                <img id="tekening-img" alt="Producttekening" />
+                <div class="muted small" id="tekening-naam"></div>
+                <button type="button" class="link" id="btn-verwijder-tek">Verwijderen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kaart">
+          <div class="kaart-kop">Product­gegevens</div>
+          <div class="kaart-body">
+            <div class="veld">
+              <label>Afmetingen product <span class="hint">(cm, L×B×H)</span></label>
+              <div class="rij3">
+                <input type="number" id="p-l" placeholder="Lengte" min="1" step="0.1" value="120" />
+                <input type="number" id="p-b" placeholder="Breedte" min="1" step="0.1" value="80" />
+                <input type="number" id="p-h" placeholder="Hoogte" min="1" step="0.1" value="90" />
+              </div>
+            </div>
+            <div class="rij2">
+              <div class="veld">
+                <label for="p-gewicht">Gewicht product <span class="hint">(kg)</span></label>
+                <input type="number" id="p-gewicht" min="0" step="1" value="350" />
+              </div>
+              <div class="veld">
+                <label for="p-aantal">Aantal kisten</label>
+                <input type="number" id="p-aantal" min="1" step="1" value="1" />
+              </div>
+            </div>
+            <div class="veld">
+              <label for="p-oms">Omschrijving product <span class="hint">(optioneel)</span></label>
+              <input type="text" id="p-oms" placeholder="Bijv. machineframe, motor, …" />
+            </div>
+            <div class="stap-acties">
+              <span></span>
+              <button class="btn primair" id="naar-2">Volgende →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STAP 2: BESTEMMING & VRACHT -->
+    <section class="stap hidden" id="stap-2">
+      <div class="kaart" style="max-width:640px">
+        <div class="kaart-kop">Bestemming &amp; vrachtsoort</div>
+        <div class="kaart-body">
+          <div class="veld">
+            <label for="b-bestemming">Bestemming <span class="hint">(land / haven / luchthaven)</span></label>
+            <input type="text" id="b-bestemming" placeholder="Bijv. Shanghai, China" />
+          </div>
+          <div class="veld">
+            <label>Vrachtsoort</label>
+            <div class="keuze-rij">
+              <label class="keuze"><input type="radio" name="vracht" value="zee" checked /><span><strong>🚢 Zeevracht</strong><br><span class="muted small">Sterker, vochtbestendig, ISPM-15</span></span></label>
+              <label class="keuze"><input type="radio" name="vracht" value="lucht" /><span><strong>✈️ Luchtvracht</strong><br><span class="muted small">Zo licht mogelijk (volumegewicht)</span></span></label>
+            </div>
+          </div>
+          <div class="stap-acties">
+            <button class="btn ghost" id="terug-1">← Terug</button>
+            <button class="btn primair" id="naar-3">Advies tonen →</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STAP 3: ADVIES -->
+    <section class="stap hidden" id="stap-3">
+      <div id="advies-inhoud"></div>
+      <div class="stap-acties" style="max-width:1180px;margin-top:18px">
+        <button class="btn ghost" id="terug-2">← Terug</button>
+        <button class="btn ghost" id="opnieuw">Opnieuw beginnen</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== PLACEHOLDER-MODULES ===================== -->
+  <main class="wrap hidden" id="mod-tekenen">
+    <div class="binnenkort"><div class="ic">📐</div><h3>Tekenen</h3><p>Zit nu verwerkt in het advies. Een losse teken-/ontwerpmodule volgt.</p></div>
+  </main>
+  <main class="wrap hidden" id="mod-optimaliseren">
+    <div class="binnenkort"><div class="ic">📦</div><h3>Optimaliseren</h3><p>Zaagplan (plaat &amp; profiel) en container-/ladingoptimalisatie. Binnenkort.</p></div>
+  </main>
+  <main class="wrap hidden" id="mod-bestellen">
+    <div class="binnenkort"><div class="ic">🧾</div><h3>Bestellen</h3><p>De bestelflow — wordt later overgezet vanuit het huidige portaal.</p></div>
+  </main>
+
+  <script src="data/types.js"></script>
+  <script src="data/typecodes.js"></script>
+  <script src="engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

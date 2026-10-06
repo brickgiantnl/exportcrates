@@ -1,0 +1,14 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Logs / tijdelijk
+*.log
+.cache/
+tmp/
+
+# Node (voor als er later een build/tooling bijkomt)
+node_modules/

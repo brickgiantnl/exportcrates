@@ -1,0 +1,9 @@
+# Optioneel: Render "Blueprint" voor een statische site.
+# Je kunt dit gebruiken OF alles in het Render-dashboard instellen
+# (New → Static Site → Publish directory = ".", Build command leeg).
+services:
+  - type: web
+    name: exportcrates
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: .
