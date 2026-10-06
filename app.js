@@ -18,16 +18,18 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
 
 /* ---------------- VOORLOPIGE VAKREGELS (corrigeerbaar) ---------------- */
 const CONFIG = {
-  // speling rond het product → binnenmaat kist (cm per kant)
-  spelingZij: 5,        // links/rechts en voor/achter
-  spelingTop: 7,        // boven het product
-  spelingZee: 2,        // extra speling bij zeevracht (vocht/dunnage), per kant
+  // verpakkingsruimte rond het product → binnenmaat kist (cm per zijde).
+  // Standaard 10 cm rondom (links/rechts, voor/achter en boven); product op de bodem.
+  spelingRondom: 10,
   // standaard familie (2-letter prefix) per vrachtsoort (eerste voorzet)
   famZee: "KS",     // zeevracht → volledig vurenhout (sterk, ISPM-15)
   famLucht: "PS",   // luchtvracht → multiplex (lichter)
   // kostprijs-tarieven
-  prijsHoutM3: 350,     // € per m³ vurenhout
-  prijsPlaatM3: 650,    // € per m³ plaatmateriaal (multiplex/osb)
+  // Hout/planken: prijs per STREKKENDE METER, per profiel. Staat er geen prijs
+  // voor een profiel in houtPrijzen, dan afgeleid uit houtBasisM3 (€/m³ × doorsnede).
+  houtBasisM3: 350,     // € per m³ (voor afgeleide €/m waar geen vaste prijs is)
+  houtPrijzen: {},      // bv. {"5x7.5": 1.20, "10x2.5": 0.95}  (€ per strekkende meter)
+  prijsPlaatM2: 15,     // € per m² plaatmateriaal (multiplex/osb)
   uurBasis: 0.6,        // vaste opbouwtijd per kist (uur)
   uurPerM2: 0.12,       // extra uur per m² uitwendig oppervlak
   uurtarief: 48,        // € per uur
@@ -71,8 +73,15 @@ function cijferVoorKlasse(klasse) {
 }
 function klasseVanCode(code) {
   const d = decode(code); if (!d) return 0;
-  const map = TC.cijferNaarKlasse || {};
+  const base = d.prefix + d.dLL + d.dVL + d.dWD;           // 5-teken basistype
+  if (TC.klasseMap && TC.klasseMap[base] != null) return TC.klasseMap[base];  // exact van blad
+  const map = TC.cijferNaarKlasse || {};                    // terugval: 1e cijfer
   return map[d.dLL] != null ? map[d.dLL] : 0;
+}
+// is de klasse van dit type exact van het blad (true) of afgeleid (false)?
+function klasseVanBlad(code) {
+  const d = decode(code); if (!d) return false;
+  return !!(TC.klasseMap && TC.klasseMap[d.prefix + d.dLL + d.dVL + d.dWD] != null);
 }
 function klasseLabel(i) { return (TC.gewichtsklassen && TC.gewichtsklassen[i]) ? TC.gewichtsklassen[i].label : "—"; }
 
@@ -140,10 +149,9 @@ function laadTekening(file) {
 
 /* ============================ BINNENMAAT + KEUZE ============================ */
 function binnenmaat() {
-  const p = state.product;
-  const extra = state.vracht === "zee" ? CONFIG.spelingZee : 0;
-  const zij = CONFIG.spelingZij + extra, top = CONFIG.spelingTop + extra;
-  return { il: p.l + 2 * zij, ib: p.b + 2 * zij, ih: p.h + top + extra };
+  const p = state.product, r = CONFIG.spelingRondom;
+  // 10 cm rondom: beide zijden in lengte/breedte, één keer boven (product op de bodem)
+  return { il: p.l + 2 * r, ib: p.b + 2 * r, ih: p.h + r };
 }
 // aanwezige families (2-letter prefix) in de data
 function families() {
@@ -192,18 +200,30 @@ function kiesAanbevolen(cands, nodigKlasse) {
 }
 
 /* ============================ KOSTPRIJS ============================ */
+function houtPrijsPerM(d) {
+  // vaste prijs per profiel (b×d) als die bekend is, anders afgeleid uit €/m³
+  const key = `${fmt(d.b)}x${fmt(d.dk)}`;
+  if (CONFIG.houtPrijzen && CONFIG.houtPrijzen[key] != null) return CONFIG.houtPrijzen[key];
+  return (d.b * (d.dk || 0) / 1e4) * CONFIG.houtBasisM3;      // doorsnede (m²) × €/m³ = €/m
+}
 function kostprijs(res) {
-  let houtM3 = 0, plaatM3 = 0;
+  let houtMeter = 0, houtKost = 0, plaatM2 = 0;
   res.delen.forEach(d => {
-    const v = d.aantal * d.lengte * d.b * (d.dk || 0) / 1e6;  // m³
-    if (d.cat === "plaat") plaatM3 += v; else houtM3 += v;
+    if (d.cat === "plaat") {
+      plaatM2 += d.aantal * d.lengte * (d.b || 0) / 1e4;     // m²
+    } else {
+      const m = d.aantal * d.lengte / 100;                    // strekkende meter
+      houtMeter += m;
+      houtKost += m * houtPrijsPerM(d);
+    }
   });
-  const materiaal = houtM3 * CONFIG.prijsHoutM3 + plaatM3 * CONFIG.prijsPlaatM3;
+  const plaatKost = plaatM2 * CONFIG.prijsPlaatM2;
+  const materiaal = houtKost + plaatKost;
   const uren = CONFIG.uurBasis + CONFIG.uurPerM2 * res.kpi.M2;
   const arbeid = uren * CONFIG.uurtarief;
   const kost = materiaal + arbeid;
   const verkoop = kost * (1 + CONFIG.marge / 100);
-  return { houtM3, plaatM3, materiaal, uren, arbeid, kost, verkoop };
+  return { houtMeter, houtKost, plaatM2, plaatKost, materiaal, uren, arbeid, kost, verkoop };
 }
 
 /* ============================ TEKENING KIST (SVG) ============================ */
@@ -444,8 +464,8 @@ function renderAdvies() {
         <div class="kaart-kop">Kostprijs <span class="muted small">per kist</span></div>
         <div class="kaart-body">
           <table class="lijst mini">
-            <tr><td>Materiaal — hout</td><td class="num">${fmt(k.houtM3, 3)} m³</td><td class="num">${euro(k.houtM3 * CONFIG.prijsHoutM3)}</td></tr>
-            <tr><td>Materiaal — plaat</td><td class="num">${fmt(k.plaatM3, 3)} m³</td><td class="num">${euro(k.plaatM3 * CONFIG.prijsPlaatM3)}</td></tr>
+            <tr><td>Hout / planken</td><td class="num">${fmt(k.houtMeter)} m</td><td class="num">${euro(k.houtKost)}</td></tr>
+            <tr><td>Plaatmateriaal</td><td class="num">${fmt(k.plaatM2, 2)} m²</td><td class="num">${euro(k.plaatKost)}</td></tr>
             <tr><td>Arbeid</td><td class="num">${fmt(k.uren, 2)} u</td><td class="num">${euro(k.arbeid)}</td></tr>
             <tr class="subtot"><td>Kostprijs</td><td></td><td class="num">${euro(k.kost)}</td></tr>
             <tr><td>Marge ${CONFIG.marge}%</td><td></td><td class="num">${euro(k.verkoop - k.kost)}</td></tr>
@@ -473,12 +493,12 @@ function renderAdvies() {
         <summary class="kaart-kop">⚙️ Aannames &amp; tarieven <span class="muted small">(voorlopig — pas aan)</span></summary>
         <div class="kaart-body">
           <div class="rij2">
-            <div class="veld"><label>Speling per kant (cm)</label><input type="number" id="c-spelingZij" value="${CONFIG.spelingZij}" step="0.5"></div>
-            <div class="veld"><label>Speling boven (cm)</label><input type="number" id="c-spelingTop" value="${CONFIG.spelingTop}" step="0.5"></div>
+            <div class="veld"><label>Speling rondom (cm)</label><input type="number" id="c-spelingRondom" value="${CONFIG.spelingRondom}" step="0.5"></div>
+            <div class="veld"></div>
           </div>
           <div class="rij2">
-            <div class="veld"><label>Hout € / m³</label><input type="number" id="c-prijsHoutM3" value="${CONFIG.prijsHoutM3}"></div>
-            <div class="veld"><label>Plaat € / m³</label><input type="number" id="c-prijsPlaatM3" value="${CONFIG.prijsPlaatM3}"></div>
+            <div class="veld"><label>Hout basis € / m³ <span class="hint">(→ €/m per profiel)</span></label><input type="number" id="c-houtBasisM3" value="${CONFIG.houtBasisM3}"></div>
+            <div class="veld"><label>Plaat € / m²</label><input type="number" id="c-prijsPlaatM2" value="${CONFIG.prijsPlaatM2}"></div>
           </div>
           <div class="rij2">
             <div class="veld"><label>Uurtarief €</label><input type="number" id="c-uurtarief" value="${CONFIG.uurtarief}"></div>
@@ -500,8 +520,8 @@ function renderAdvies() {
   // wiring
   $("a-type").addEventListener("change", e => { state.gekozenType = e.target.value; renderAdvies(); });
   $("a-fam").addEventListener("change", e => { state.gekozenFam = e.target.value; state.gekozenType = null; renderAdvies(); });
-  [["c-spelingZij", "spelingZij"], ["c-spelingTop", "spelingTop"], ["c-prijsHoutM3", "prijsHoutM3"],
-   ["c-prijsPlaatM3", "prijsPlaatM3"], ["c-uurtarief", "uurtarief"], ["c-marge", "marge"]]
+  [["c-spelingRondom", "spelingRondom"], ["c-houtBasisM3", "houtBasisM3"],
+   ["c-prijsPlaatM2", "prijsPlaatM2"], ["c-uurtarief", "uurtarief"], ["c-marge", "marge"]]
     .forEach(([id, key]) => {
       const el = $(id); if (!el) return;
       el.addEventListener("change", () => {

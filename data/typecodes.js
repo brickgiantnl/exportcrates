@@ -26,8 +26,24 @@ window.TYPECODES = {
     { label: "2000 – 3000 kg",   max: 3000,     kleur: "#8fb8de" },
     { label: "boven 3000 kg",    max: Infinity, kleur: "#c9c9c9" },
   ],
-  // 1e cijfer (langsligger) → index in gewichtsklassen  (VOORLOPIG)
-  cijferNaarKlasse: { 0: 0, 1: 0, 2: 1, 3: 1, 4: 1, 5: 2, 6: 3, 7: 4 },
+  // EXACTE klasse per type, overgenomen van het master-blad (de kleuren).
+  // Index verwijst naar gewichtsklassen[] hierboven (0=tot100 … 4=boven3000).
+  // Geldt voor het 5-teken basistype; varianten met achtervoegsel erven dit.
+  klasseMap: (function () {
+    const m = {}, add = (cls, codes) => codes.forEach(c => { m[c] = cls; });
+    add(0, ["KS022", "KS122", "PS000", "PS010", "PS011", "PS100", "PS110", "PS111"]);
+    add(1, ["KS222", "KS322", "KS332",
+      "PS200", "PS210", "PS211", "PS220", "PS221", "PS300", "PS310", "PS311", "PS320", "PS321", "PS331"]);
+    add(2, ["KS422", "KS432", "PS400", "PS410", "PS411", "PS420", "PS421"]);
+    add(3, ["KS522", "KS532", "KS533",
+      "PS431", "PS500", "PS510", "PS511", "PS520", "PS521", "PS531"]);
+    add(4, ["KS622", "KS632", "KS633", "KS722", "KS732", "KS733",
+      "PS600", "PS610", "PS611", "PS620", "PS621", "PS631"]);
+    return m;
+  })(),
+  // Terugval (types die NIET op het blad staan, bv. MS/GS/PL/KL): 1e cijfer → klasse.
+  // Afgeleid uit het blad (KS klopt exact; PS op PS431 na): 0-1→0, 2-3→1, 4→2, 5→3, 6-7→4.
+  cijferNaarKlasse: { 0: 0, 1: 0, 2: 1, 3: 1, 4: 2, 5: 3, 6: 4, 7: 4 },
 
   // Dimensietabel uit het blad (breed×hoog in mm), ter referentie/controle.
   // (Geometrie die de app gebruikt komt uit data/types.js.)
