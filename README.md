@@ -41,6 +41,10 @@ Geen build-stap nodig. Publiceer de **hele map** als statische site:
 
 Daarna domein `exportcrates.nl` koppelen via het hosting-dashboard + DNS.
 
+**Belangrijk — cache-busting:** de scripts/stylesheet in `index.html` hebben een
+`?v=…`-versie. **Hoog die op bij elke wijziging** (bijv. de datum + een letter),
+anders laden terugkerende bezoekers de oude (gecachete) versie.
+
 ## Status / nog te doen
 
 - Keuzeregels (gewichtsklasse, speling) en kostprijs-tarieven zijn een **voorzet** —
