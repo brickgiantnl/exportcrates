@@ -207,37 +207,155 @@ function kostprijs(res) {
 }
 
 /* ============================ TEKENING KIST (SVG) ============================ */
+// Maatlijn-helpers (lijn met eind-streepjes + label op witte achtergrond)
+function dimH(x1, x2, y, label) {
+  const t = 4, mx = (x1 + x2) / 2;
+  return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="tk-dim"/>
+    <line x1="${x1}" y1="${y - t}" x2="${x1}" y2="${y + t}" class="tk-dim"/>
+    <line x1="${x2}" y1="${y - t}" x2="${x2}" y2="${y + t}" class="tk-dim"/>
+    <rect x="${mx - 20}" y="${y - 8}" width="40" height="11" class="tk-dimbg"/>
+    <text x="${mx}" y="${y}" class="tk-dimtext" text-anchor="middle">${label}</text>`;
+}
+function dimV(y1, y2, x, label) {
+  const t = 4, my = (y1 + y2) / 2;
+  return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" class="tk-dim"/>
+    <line x1="${x - t}" y1="${y1}" x2="${x + t}" y2="${y1}" class="tk-dim"/>
+    <line x1="${x - t}" y1="${y2}" x2="${x + t}" y2="${y2}" class="tk-dim"/>
+    <text x="${x}" y="${my}" class="tk-dimtext" text-anchor="middle" transform="rotate(-90 ${x} ${my})">${label}</text>`;
+}
+
 function tekenKist(res) {
   const p = state.product;
   const uL = res.uL, uB = res.uB, uH = res.uH;
-  const s = 260 / Math.max(uL, uB, uH);          // gedeelde schaal
-  const pad = 34;
-  const view = (w, h, inner, binnenEtiket, label) => {
-    const W = w * s + pad * 2, H = h * s + pad * 2;
-    const ox = pad, oy = pad;
-    // product gecentreerd (zijaanzicht: op de bodem)
-    const iw = inner.w * s, ih = inner.h * s;
+  const sbPos = (res.sb && res.sb.pos && res.sb.pos.length) ? res.sb.pos : [uL / 2];
+  const sbW = (res.sb && res.sb.w) ? res.sb.w : 10;
+  const skidH = Math.max(uH * 0.07, 6);            // visuele skid/onderstel-hoogte (cm)
+  const nLL = 4;                                    // langsliggers
+
+  /* ---------- orthografische weergave ---------- */
+  const ortho = (titel, w, h, binnen, opts) => {
+    opts = opts || {};
+    const target = 215, pad = 38, s = target / Math.max(w, h);
+    const W = w * s + pad * 2, H = h * s + pad * 2, ox = pad, oy = pad;
+    const X = cm => ox + cm * s, Y = cm => oy + cm * s;        // vanaf linksboven kist
+    const YB = cm => oy + h * s - cm * s;                       // vanaf onderkant kist
+    let extra = opts.draw ? opts.draw({ X, Y, YB, s, ox, oy, w, h }) : "";
+    // product (gestreept); bij aanzichten op de bodem, bovenaanzicht gecentreerd
+    const iw = binnen.w * s, ih = binnen.h * s;
     const ix = ox + (w * s - iw) / 2;
-    const iy = inner.bottom ? (oy + h * s - ih) : (oy + (h * s - ih) / 2);
-    return `<svg viewBox="0 0 ${W} ${H}" class="tek-svg" preserveAspectRatio="xMidYMid meet">
-      <rect x="${ox}" y="${oy}" width="${w * s}" height="${h * s}" class="tk-kist" rx="2"/>
-      <rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" class="tk-prod" rx="1"/>
-      <text x="${ox + w * s / 2}" y="${oy + h * s / 2}" class="tk-prodtxt">product</text>
-      <!-- maatlijn breedte -->
-      <text x="${ox + w * s / 2}" y="${oy - 10}" class="tk-maat" text-anchor="middle">${fmt(w)} cm</text>
-      <!-- maatlijn hoogte -->
-      <text x="${ox - 8}" y="${oy + h * s / 2}" class="tk-maat" text-anchor="middle" transform="rotate(-90 ${ox - 8} ${oy + h * s / 2})">${fmt(h)} cm</text>
-      <text x="${ox}" y="${oy + h * s + 20}" class="tk-label">${label}</text>
-    </svg>`;
+    const iy = binnen.opBodem ? (oy + h * s - ih - (opts.vloerCm || 0) * s) : (oy + (h * s - ih) / 2);
+    const prod = `<rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" class="tk-prod" rx="1"/>
+      <text x="${ix + iw / 2}" y="${iy + ih / 2}" class="tk-prodtxt">product</text>`;
+    return `<figure class="tek-fig"><svg viewBox="0 0 ${W} ${H}" class="tek-svg" preserveAspectRatio="xMidYMid meet">
+      <rect x="${ox}" y="${oy}" width="${w * s}" height="${h * s}" class="tk-kist"/>
+      ${extra}${prod}
+      ${dimH(ox, ox + w * s, oy + h * s + 20, fmt(w) + " cm")}
+      ${dimV(oy, oy + h * s, ox - 18, fmt(h) + " cm")}
+    </svg><figcaption>${titel}</figcaption></figure>`;
   };
-  // sleebalken in bovenaanzicht
-  const sb = (res.sb && res.sb.pos) ? res.sb.pos.map(x =>
-    `<line x1="${pad + x * s}" y1="${pad}" x2="${pad + x * s}" y2="${pad + uB * s}" class="tk-sb"/>`).join("") : "";
-  const boven = view(uL, uB, { w: p.l, h: p.b, bottom: false }, true, "bovenaanzicht (bodem)")
-    .replace("</svg>", sb + "</svg>");
-  const zij = view(uL, uH, { w: p.l, h: p.h, bottom: true }, true, "zijaanzicht");
-  return `<div class="tek-grid">${boven}${zij}</div>
-    <p class="muted small">Buitenmaat ${fmt(uL)} × ${fmt(uB)} × ${fmt(uH)} cm · binnenmaat (incl. speling) ${fmt(res.M ? 0 : 0)}… — schematisch, maatvast op schaal.</p>`;
+
+  // bovenaanzicht (bodem/onderstel): langsliggers (lengte) + sleebalken (dwars)
+  const boven = ortho("Bovenaanzicht — bodem", uL, uB, { w: p.l, h: p.b, opBodem: false }, {
+    draw: ({ X, Y, s }) => {
+      let g = "";
+      for (let i = 0; i < nLL; i++) {               // 4 langsliggers over de breedte
+        const yc = uB * (i + 0.5) / nLL, hh = Math.max(2.5 * s, 3);
+        g += `<rect x="${X(0)}" y="${Y(yc) - hh / 2}" width="${uL * s}" height="${hh}" class="tk-ll"/>`;
+      }
+      sbPos.forEach(x => {                           // sleebalken dwars (volle breedte)
+        g += `<rect x="${X(x - sbW / 2)}" y="${Y(0)}" width="${sbW * s}" height="${uB * s}" class="tk-sb2"/>`;
+      });
+      return g;
+    }
+  });
+
+  // zijaanzicht (lengte × hoogte): wand met klampen + onderstel + skids
+  const zij = ortho("Zijaanzicht", uL, uH, { w: p.l, h: p.h, opBodem: true, }, {
+    vloerCm: skidH,
+    draw: ({ X, Y, YB, s, ox, oy }) => {
+      let g = wandKlampen(ox, oy, uL * s, uH * s, 3);
+      g += `<rect x="${X(0)}" y="${YB(skidH)}" width="${uL * s}" height="${skidH * s}" class="tk-floor"/>`;
+      sbPos.forEach(x => {                           // skids/voeten onder de kist
+        g += `<rect x="${X(x - sbW / 2)}" y="${YB(0)}" width="${sbW * s}" height="${Math.max(skidH * s * 0.8, 5)}" class="tk-skid"/>`;
+      });
+      return g;
+    }
+  });
+
+  // kopaanzicht (breedte × hoogte)
+  const kop = ortho("Kopaanzicht", uB, uH, { w: p.b, h: p.h, opBodem: true }, {
+    vloerCm: skidH,
+    draw: ({ X, Y, YB, s, ox, oy }) => {
+      let g = wandKlampen(ox, oy, uB * s, uH * s, 2);
+      g += `<rect x="${X(0)}" y="${YB(skidH)}" width="${uB * s}" height="${skidH * s}" class="tk-floor"/>`;
+      return g;
+    }
+  });
+
+  const iso = isoKist(res, uL, uB, uH, sbPos, sbW, skidH);
+
+  return `<div class="tek-iso">${iso}</div>
+    <div class="tek-ortho">${boven}${zij}${kop}</div>
+    <p class="muted small" style="margin-top:10px">Buitenmaat ${fmt(uL)} × ${fmt(uB)} × ${fmt(uH)} cm · onderstel met ${sbPos.length} sleebalk${sbPos.length === 1 ? "" : "ken"} · schematisch, maatvast op schaal per aanzicht.</p>`;
+}
+
+// klampen-raster op een wandvlak (rechthoek ox,oy,w,h in px): rand + n verticale klampen
+function wandKlampen(ox, oy, w, h, nVert) {
+  let g = `<rect x="${ox + 3}" y="${oy + 3}" width="${w - 6}" height="${h - 6}" class="tk-frame"/>`;
+  for (let i = 1; i <= nVert; i++) {
+    const x = ox + w * i / (nVert + 1);
+    g += `<line x1="${x}" y1="${oy + 3}" x2="${x}" y2="${oy + h - 3}" class="tk-klamp"/>`;
+  }
+  // bovenklamp
+  g += `<line x1="${ox + 3}" y1="${oy + 10}" x2="${ox + w - 3}" y2="${oy + 10}" class="tk-klamp"/>`;
+  return g;
+}
+
+// isometrische 3D-weergave
+function isoKist(res, uL, uB, uH, sbPos, sbW, skidH) {
+  const c = Math.cos(Math.PI / 6), s = Math.sin(Math.PI / 6);
+  const pr = (x, y, z) => [(x - y) * c, (x + y) * s - z];
+  const corners = [];
+  for (const x of [0, uL]) for (const y of [0, uB]) for (const z of [0, uH]) corners.push(pr(x, y, z));
+  const xs = corners.map(p => p[0]), ys = corners.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const target = 300, pad = 42;
+  const sc = target / Math.max(maxX - minX, maxY - minY);
+  const W = (maxX - minX) * sc + pad * 2, H = (maxY - minY) * sc + pad * 2 + 14;
+  const P = (x, y, z) => { const [px, py] = pr(x, y, z); return [(px - minX) * sc + pad, (py - minY) * sc + pad]; };
+  const pts = arr => arr.map(a => P(a[0], a[1], a[2]).map(v => v.toFixed(1)).join(",")).join(" ");
+  const poly = (cls, arr) => `<polygon class="${cls}" points="${pts(arr)}"/>`;
+  const line = (a, b, cls) => { const p1 = P(...a), p2 = P(...b); return `<line x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" class="${cls}"/>`; };
+
+  // vlakken: top, voorkant (y=0), rechterkant (x=uL)
+  let g = poly("tk-face-top", [[0, 0, uH], [uL, 0, uH], [uL, uB, uH], [0, uB, uH]]);
+  g += poly("tk-face-side", [[uL, 0, 0], [uL, uB, 0], [uL, uB, uH], [uL, 0, uH]]);
+  g += poly("tk-face-front", [[0, 0, 0], [uL, 0, 0], [uL, 0, uH], [0, 0, uH]]);
+  // klampen op voorkant (verticaal) en rechterkant
+  for (let i = 1; i <= 3; i++) { const x = uL * i / 4; g += line([x, 0, 0], [x, 0, uH], "tk-klamp3"); }
+  for (let i = 1; i <= 2; i++) { const y = uB * i / 3; g += line([uL, y, 0], [uL, y, uH], "tk-klamp3"); }
+  // bovenklamp-randen
+  g += line([0, 0, uH * 0.92], [uL, 0, uH * 0.92], "tk-klamp3");
+  // skids (voeten) onder de voorkant
+  sbPos.forEach(x => {
+    const a = P(x - sbW / 2, 0, 0), b = P(x + sbW / 2, 0, 0);
+    const hh = Math.max(skidH * sc * 0.5, 7);
+    g += `<polygon class="tk-skid" points="${a[0].toFixed(1)},${a[1].toFixed(1)} ${b[0].toFixed(1)},${b[1].toFixed(1)} ${b[0].toFixed(1)},${(b[1] + hh).toFixed(1)} ${a[0].toFixed(1)},${(a[1] + hh).toFixed(1)}"/>`;
+  });
+  // randen
+  const edges = [[[0, 0, 0], [uL, 0, 0]], [[0, 0, 0], [0, uB, 0]], [[0, 0, 0], [0, 0, uH]],
+    [[uL, 0, 0], [uL, uB, 0]], [[uL, 0, 0], [uL, 0, uH]], [[0, uB, 0], [uL, uB, 0]],
+    [[0, 0, uH], [uL, 0, uH]], [[0, 0, uH], [0, uB, uH]], [[uL, 0, uH], [uL, uB, uH]],
+    [[0, uB, uH], [uL, uB, uH]], [[uL, uB, 0], [uL, uB, uH]], [[0, uB, 0], [0, uB, uH]]];
+  edges.forEach(e => g += line(e[0], e[1], "tk-edge"));
+  // maat-labels bij de 3 richtingen
+  const mid = (a, b) => { const p1 = P(...a), p2 = P(...b); return [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2]; };
+  const mL = mid([0, 0, 0], [uL, 0, 0]), mB = mid([uL, 0, 0], [uL, uB, 0]), mH = mid([uL, uB, 0], [uL, uB, uH]);
+  g += `<text x="${mL[0]}" y="${mL[1] + 16}" class="tk-dimtext" text-anchor="middle">L ${fmt(uL)}</text>`;
+  g += `<text x="${mB[0] + 14}" y="${mB[1] + 12}" class="tk-dimtext" text-anchor="middle">B ${fmt(uB)}</text>`;
+  g += `<text x="${mH[0] + 16}" y="${mH[1]}" class="tk-dimtext" text-anchor="middle">H ${fmt(uH)}</text>`;
+
+  return `<figure class="tek-fig"><svg viewBox="0 0 ${W} ${H}" class="tek-svg" preserveAspectRatio="xMidYMid meet">${g}</svg><figcaption>3D-weergave</figcaption></figure>`;
 }
 
 /* ============================ RENDER ADVIES ============================ */
@@ -318,11 +436,6 @@ function renderAdvies() {
           ${state.vracht === "lucht" ? `<p class="muted small" style="margin:8px 0 0">Bruto ${fmt(bruto)} kg · volumegewicht ${fmt(volGew)} kg (1 m³ ≈ ${CONFIG.volumeFactorLucht} kg). Luchtvracht rekent met het hoogste.</p>` : ""}
         </div>
       </div>
-
-      <div class="kaart" style="margin-top:18px">
-        <div class="kaart-kop">Tekening</div>
-        <div class="kaart-body" id="tek-slot"></div>
-      </div>
     </div>
 
     <!-- RECHTS: kostprijs + alternatieven -->
@@ -375,6 +488,11 @@ function renderAdvies() {
         </div>
       </details>
     </div>
+  </div>
+
+  <div class="kaart" style="margin-top:18px">
+    <div class="kaart-kop">Tekening <span class="muted small">— ${esc(gekozen.code)}</span></div>
+    <div class="kaart-body" id="tek-slot"></div>
   </div>`;
 
   $("tek-slot").innerHTML = tekenKist(res);

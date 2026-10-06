@@ -205,15 +205,36 @@ table.lijst tr:last-child td { border-bottom: 0; }
 @media (max-width: 1100px) { .advies-kaart .kpi-rij { grid-template-columns: 1fr 1fr; } }
 
 /* ---------- Tekening ---------- */
-.tek-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-@media (max-width: 560px) { .tek-grid { grid-template-columns: 1fr; } }
-.tek-svg { width: 100%; height: auto; background: #fcfcfa; border: 1px solid var(--lijn); border-radius: 8px; }
+.tek-iso { max-width: 440px; margin: 0 auto 16px; }
+.tek-ortho { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 720px) { .tek-ortho { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 460px) { .tek-ortho { grid-template-columns: 1fr; } }
+.tek-fig { margin: 0; }
+.tek-fig figcaption { text-align: center; font-size: 11px; color: var(--grijs); font-weight: 600; margin-top: 4px; }
+.tek-svg { width: 100%; height: auto; background: #fcfcfa; border: 1px solid var(--lijn); border-radius: 8px; display: block; }
+.tek-iso .tek-svg { background: linear-gradient(180deg, #fcfdfc, #f4f7f4); }
+
 .tk-kist { fill: #fff; stroke: var(--inkt); stroke-width: 1.5; }
-.tk-prod { fill: var(--hout-l); stroke: var(--hout); stroke-width: 1; stroke-dasharray: 3 2; }
-.tk-prodtxt { fill: var(--hout); font-size: 9px; text-anchor: middle; dominant-baseline: middle; }
-.tk-sb { stroke: var(--groen); stroke-width: 1; opacity: .5; }
-.tk-maat { fill: var(--grijs); font-size: 10px; font-weight: 600; }
-.tk-label { fill: var(--grijs); font-size: 10px; }
+.tk-prod { fill: var(--hout-l); stroke: var(--hout); stroke-width: 1.2; stroke-dasharray: 4 2; opacity: .9; }
+.tk-prodtxt { fill: var(--hout); font-size: 8.5px; text-anchor: middle; dominant-baseline: middle; }
+.tk-ll { fill: #e3ddd1; stroke: #cbb48f; stroke-width: .5; }       /* langsliggers */
+.tk-sb2 { fill: rgba(31,107,74,.18); stroke: var(--groen); stroke-width: .8; }  /* sleebalken */
+.tk-floor { fill: #efe7d8; stroke: #cbb48f; stroke-width: .6; }    /* vloer/onderstel */
+.tk-skid { fill: var(--groen-d); opacity: .85; }                   /* skids/voeten */
+.tk-frame { fill: none; stroke: var(--inkt); stroke-width: 1; opacity: .35; }
+.tk-klamp { stroke: var(--grijs); stroke-width: 1; opacity: .5; }
+.tk-klamp3 { stroke: rgba(27,36,48,.35); stroke-width: 1; }
+
+/* iso-vlakken (lichtinval: top licht, voor midden, zij donker) */
+.tk-face-top { fill: #eef5f0; stroke: var(--inkt); stroke-width: 1; }
+.tk-face-front { fill: #dcebe2; stroke: var(--inkt); stroke-width: 1; }
+.tk-face-side { fill: #c7dcd0; stroke: var(--inkt); stroke-width: 1; }
+.tk-edge { stroke: var(--inkt); stroke-width: 1.4; stroke-linecap: round; }
+
+/* maatlijnen */
+.tk-dim { stroke: var(--grijs); stroke-width: .8; }
+.tk-dimbg { fill: #fcfcfa; opacity: .9; }
+.tk-dimtext { fill: var(--inkt); font-size: 10px; font-weight: 600; dominant-baseline: middle; }
 
 /* ---------- Mini-tabel kostprijs ---------- */
 table.lijst.mini td { padding: 6px 4px; }
