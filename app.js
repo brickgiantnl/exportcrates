@@ -95,6 +95,8 @@ const state = {
   gekozenFam: null,        // handmatige override familie (2-letter prefix)
   // onderstel & drukpunten (voor positioneren heftruckbalken / sleebalken)
   onderstel: { sbAantal: null, sbPosTxt: "", drukpunten: [], overlay: 0.65 },
+  gekozenCode: null,        // laatst geadviseerde/ gekozen kisttype (voor Optimaliseren)
+  opt: { voorraad: [300, 400, 500], plaatL: 244, plaatB: 122, kerf: 0.4 },
 };
 
 /* ============================ STAP-NAVIGATIE ============================ */
@@ -534,6 +536,7 @@ function renderAdvies() {
   const gekozen = cands.find(c => c.code === aanbevolenCode) || aanbevolen;
   const res = gekozen.res, k = gekozen.kost;
   const bm = binnenmaat();
+  state.gekozenCode = gekozen.code;   // onthouden voor de Optimaliseren-module
 
   // gewichten
   const tarra = res.kpi.tarra, bruto = tarra + p.gewicht;
@@ -806,12 +809,162 @@ function wireSleep(svg, res) {
   svg.addEventListener("pointerleave", end);
 }
 
+/* ============================ OPTIMALISEREN (zaagplan) ============================ */
+// 1D afkorten: pak stukken (cm) in voorraadlengtes (First Fit Decreasing, beste lengte wint)
+function pack1D(stukken, voorraad, kerf) {
+  voorraad = voorraad.filter(l => l > 0).sort((a, b) => a - b);
+  if (!voorraad.length || !stukken.length) return { stokken: [], teLang: [], benutting: 0, netto: 0, bruto: 0 };
+  const maxL = voorraad[voorraad.length - 1];
+  const teLang = stukken.filter(s => s > maxL);
+  const ok = stukken.filter(s => s <= maxL).sort((a, b) => b - a);
+  let beste = null;
+  for (const basis of voorraad) {
+    const stokken = [];
+    for (const len of ok) {
+      let st = stokken.find(s => s.gebruikt + len + (s.stukken.length ? kerf : 0) <= basis);
+      if (!st) { st = { gebruikt: 0, stukken: [] }; stokken.push(st); }
+      const pos = st.gebruikt + (st.stukken.length ? kerf : 0);
+      st.stukken.push({ len, pos }); st.gebruikt = pos + len;
+    }
+    stokken.forEach(s => { s.lengte = voorraad.find(l => l >= s.gebruikt) || basis; s.rest = Math.round((s.lengte - s.gebruikt) * 10) / 10; });
+    const bruto = stokken.reduce((a, s) => a + s.lengte, 0), netto = ok.reduce((a, l) => a + l, 0);
+    if (!beste || (bruto - netto) < beste.afval) beste = { stokken, afval: bruto - netto, bruto, netto };
+  }
+  return { stokken: beste.stokken, teLang, benutting: beste.bruto ? beste.netto / beste.bruto : 0, netto: beste.netto, bruto: beste.bruto };
+}
+
+// 2D nesten: plaats rechthoeken {w,h} op platen (shelf / First-Fit Decreasing Height, rotatie toegestaan)
+function pack2D(rects, SW, SH, kerf) {
+  const items = rects.map(r => {
+    let w = r.w, h = r.h;
+    if (w > SW || h > SH) { const t = w; w = h; h = t; }   // draaien als het anders niet past
+    return { w, h, naam: r.naam };
+  }).filter(r => r.w <= SW + 0.01 && r.h <= SH + 0.01).sort((a, b) => b.h - a.h);
+  const teGroot = rects.length - items.length;
+  const sheets = [];
+  const tryPlace = (s, it) => {
+    for (const sh of s.shelves) {
+      const x = sh.x + (sh.x > 0 ? kerf : 0);
+      if (it.h <= sh.h + 0.01 && x + it.w <= SW + 0.01) {
+        s.rects.push({ x, y: sh.y, w: it.w, h: it.h, naam: it.naam }); sh.x = x + it.w; return true;
+      }
+    }
+    const last = s.shelves[s.shelves.length - 1];
+    const y = last ? last.y + last.h + kerf : 0;
+    if (y + it.h <= SH + 0.01) { s.shelves.push({ y, h: it.h, x: it.w }); s.rects.push({ x: 0, y, w: it.w, h: it.h, naam: it.naam }); return true; }
+    return false;
+  };
+  for (const it of items) {
+    let done = false;
+    for (const s of sheets) if (tryPlace(s, it)) { done = true; break; }
+    if (!done) { const s = { rects: [], shelves: [] }; sheets.push(s); tryPlace(s, it); }
+  }
+  const netto = items.reduce((a, r) => a + r.w * r.h, 0), bruto = sheets.length * SW * SH;
+  return { sheets, aantal: sheets.length, benutting: bruto ? netto / bruto : 0, netto, bruto, teGroot };
+}
+
+function renderOptimalisatie() {
+  const el = $("opt-inhoud");
+  const code = state.gekozenCode;
+  if (!code) { el.innerHTML = `<div class="banner waarsch"><span class="ic">⚠️</span><div>Ga eerst naar <strong>Adviseur</strong> en bepaal een kist; het zaagplan rekent op het geadviseerde type.</div></div>`; return; }
+  const res = kistVoor(code); if (!res) { el.innerHTML = `<div class="banner fout"><span class="ic">⛔</span><div>Kon de kist niet berekenen.</div></div>`; return; }
+  const n = state.product.aantal, O = state.opt;
+
+  // groeperen
+  const hout = {}, plaat = {};
+  res.delen.forEach(d => {
+    if (d.cat === "hout") {
+      const key = `${fmt(d.b)}x${fmt(d.dk)}`;
+      (hout[key] = hout[key] || { b: d.b, dk: d.dk, stukken: [], namen: new Set() });
+      for (let i = 0; i < d.aantal * n; i++) hout[key].stukken.push(d.lengte);
+      hout[key].namen.add(d.naam);
+    } else {
+      const key = `${d.matId || "plaat"}-${fmt(d.dk)}`;
+      (plaat[key] = plaat[key] || { dk: d.dk, mat: d.mat || "Plaat", rects: [] });
+      for (let i = 0; i < d.aantal * n; i++) plaat[key].rects.push({ w: d.lengte, h: d.b, naam: d.naam });
+    }
+  });
+
+  // ---- 1D hout ----
+  let totStokken = 0, houtHtml = "";
+  Object.keys(hout).sort().forEach(key => {
+    const g = hout[key], r = pack1D(g.stukken, O.voorraad, O.kerf);
+    totStokken += r.stokken.length;
+    // identieke stokken groeperen
+    const groepen = new Map();
+    r.stokken.forEach(s => { const k = s.lengte + "|" + s.stukken.map(x => Math.round(x.len * 10)).join(","); if (!groepen.has(k)) groepen.set(k, { aantal: 0, s }); groepen.get(k).aantal++; });
+    const bars = [...groepen.values()].map(({ aantal, s }) => stokBar(s, O, aantal)).join("");
+    houtHtml += `<div class="opt-groep">
+      <div class="opt-groep-kop">Profiel ${fmt(g.b)}×${fmt(g.dk)} cm <span class="muted small">(${[...g.namen].join(", ")})</span></div>
+      <div class="opt-meta">${g.stukken.length} stuks · ${r.stokken.length} voorraadlengtes · benutting ${fmt(r.benutting * 100, 0)}% · rest ${fmt((r.bruto - r.netto) / 100)} m${r.teLang.length ? ` · <span class="rood">${r.teLang.length} te lang!</span>` : ""}</div>
+      ${bars}</div>`;
+  });
+
+  // ---- 2D plaat ----
+  let totPlaten = 0, plaatHtml = "";
+  Object.keys(plaat).sort().forEach(key => {
+    const g = plaat[key], r = pack2D(g.rects, O.plaatL, O.plaatB, O.kerf);
+    totPlaten += r.aantal;
+    const sheets = r.sheets.slice(0, 8).map((s, i) => sheetSvg(s, O, i + 1)).join("");
+    plaatHtml += `<div class="opt-groep">
+      <div class="opt-groep-kop">${esc(g.mat)} ${fmt(g.dk)} cm</div>
+      <div class="opt-meta">${g.rects.length} panelen · ${r.aantal} platen (${fmt(O.plaatL)}×${fmt(O.plaatB)}) · benutting ${fmt(r.benutting * 100, 0)}%${r.teGroot ? ` · <span class="rood">${r.teGroot} te groot!</span>` : ""}</div>
+      <div class="opt-sheets">${sheets}</div>${r.aantal > 8 ? `<div class="muted small">…en nog ${r.aantal - 8} vergelijkbare platen</div>` : ""}</div>`;
+  });
+
+  el.innerHTML = `
+    <div class="kpi-rij" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi"><div class="lbl">Kist</div><div class="val" style="font-size:18px">${esc(code)}${n > 1 ? ` <small>× ${n}</small>` : ""}</div></div>
+      <div class="kpi"><div class="lbl">Hout — voorraadlengtes</div><div class="val">${totStokken}</div></div>
+      <div class="kpi"><div class="lbl">Platen</div><div class="val">${totPlaten}</div></div>
+    </div>
+    ${houtHtml ? `<div class="kaart"><div class="kaart-kop">Hout afkorten <span class="muted small">1D-zaagplan</span></div><div class="kaart-body">${houtHtml}</div></div>` : ""}
+    ${plaatHtml ? `<div class="kaart" style="margin-top:18px"><div class="kaart-kop">Platen nesten <span class="muted small">2D-zaagplan</span></div><div class="kaart-body">${plaatHtml}</div></div>` : ""}
+    ${!houtHtml && !plaatHtml ? `<p class="muted">Geen onderdelen gevonden.</p>` : ""}`;
+}
+
+// visuele voorraadlengte-balk (1D)
+function stokBar(s, O, aantal) {
+  const W = 620, H = 26, pad = 2, maxL = Math.max(...O.voorraad);
+  const sc = (W - 70) / maxL;
+  const segs = s.stukken.map(st =>
+    `<rect x="${pad + st.pos * sc}" y="${pad}" width="${Math.max(st.len * sc - 1, 1)}" height="${H - 2 * pad}" class="opt-seg"/>
+     <text x="${pad + (st.pos + st.len / 2) * sc}" y="${H / 2 + 3}" class="opt-seg-txt">${fmt(st.len)}</text>`).join("");
+  const rest = s.rest > 0.5 ? `<rect x="${pad + s.gebruikt * sc}" y="${pad}" width="${Math.max((s.lengte - s.gebruikt) * sc - 1, 1)}" height="${H - 2 * pad}" class="opt-rest"/>` : "";
+  return `<div class="opt-bar-rij"><span class="opt-bar-aantal">${aantal}×</span>
+    <svg viewBox="0 0 ${W} ${H}" class="opt-bar"><rect x="0" y="0" width="${s.lengte * sc + pad * 2}" height="${H}" class="opt-stok"/>${segs}${rest}</svg>
+    <span class="opt-bar-info muted small">${fmt(s.lengte)} cm · rest ${fmt(s.rest)}</span></div>`;
+}
+
+// visuele plaat met panelen (2D)
+function sheetSvg(s, O, nr) {
+  const target = 150, sc = target / Math.max(O.plaatL, O.plaatB);
+  const W = O.plaatL * sc, H = O.plaatB * sc;
+  const rects = s.rects.map(r =>
+    `<rect x="${r.x * sc}" y="${r.y * sc}" width="${r.w * sc}" height="${r.h * sc}" class="opt-paneel"/>
+     <text x="${(r.x + r.w / 2) * sc}" y="${(r.y + r.h / 2) * sc}" class="opt-paneel-txt">${fmt(r.w)}×${fmt(r.h)}</text>`).join("");
+  return `<figure class="opt-sheet"><svg viewBox="-1 -1 ${W + 2} ${H + 2}"><rect x="0" y="0" width="${W}" height="${H}" class="opt-plaat"/>${rects}</svg><figcaption>plaat ${nr}</figcaption></figure>`;
+}
+
+function wireOpt() {
+  const lees = () => {
+    const vr = $("opt-voorraad").value.split(/[,; ]+/).map(Number).filter(x => x > 0);
+    if (vr.length) state.opt.voorraad = vr;
+    const pl = $("opt-plaat").value.split(/[x×,; ]+/i).map(Number).filter(x => x > 0);
+    if (pl.length >= 2) { state.opt.plaatL = pl[0]; state.opt.plaatB = pl[1]; }
+    state.opt.kerf = Math.max(0, +$("opt-kerf").value || 0);
+    renderOptimalisatie();
+  };
+  ["opt-voorraad", "opt-plaat", "opt-kerf"].forEach(id => $(id).addEventListener("change", lees));
+}
+
 /* ============================ MODULE-NAV ============================ */
 function toonModule(naam) {
   ["ontwikkelen", "tekenen", "optimaliseren", "bestellen"].forEach(m =>
     $("mod-" + m).classList.toggle("hidden", m !== naam));
   document.querySelectorAll("#modnav button").forEach(b =>
     b.classList.toggle("actief", b.dataset.mod === naam));
+  if (naam === "optimaliseren") renderOptimalisatie();
 }
 document.querySelectorAll("#modnav button").forEach(b => {
   if (!b.disabled) b.addEventListener("click", () => toonModule(b.dataset.mod));
@@ -820,6 +973,7 @@ document.querySelectorAll("#modnav button").forEach(b => {
 /* ============================ START ============================ */
 wireUpload();
 wireMeet();
+wireOpt();
 $("naar-2").addEventListener("click", () => { leesStap1(); toonStap(2); });
 function resetOnderstel() { state.onderstel = { sbAantal: null, sbPosTxt: "", drukpunten: [], overlay: 0.65 }; }
 $("naar-3").addEventListener("click", () => { leesStap2(); state.gekozenType = null; state.gekozenFam = null; resetOnderstel(); toonStap(3); });

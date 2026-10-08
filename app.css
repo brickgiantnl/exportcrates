@@ -235,6 +235,28 @@ table.lijst tr:last-child td { border-bottom: 0; }
 .druk-cog.ok { background: var(--groen-l); color: var(--groen-d); }
 .druk-cog.waarsch { background: var(--amber-bg); color: var(--amber); }
 
+/* optimaliseren / zaagplan */
+.rood { color: var(--rood); font-weight: 600; }
+.opt-groep { padding: 12px 0; border-bottom: 1px solid var(--lijn); }
+.opt-groep:last-child { border-bottom: 0; }
+.opt-groep-kop { font-weight: 650; }
+.opt-meta { font-size: 13px; color: var(--grijs); margin: 2px 0 8px; }
+.opt-bar-rij { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.opt-bar-aantal { font-weight: 700; font-size: 13px; width: 28px; color: var(--groen-d); }
+.opt-bar { width: 100%; max-width: 620px; height: auto; flex: 1; }
+.opt-bar-info { white-space: nowrap; }
+.opt-stok { fill: #f1ece1; stroke: #cbb48f; stroke-width: 1; }
+.opt-seg { fill: var(--groen-l); stroke: var(--groen); stroke-width: .8; }
+.opt-seg-txt { fill: var(--groen-d); font-size: 9px; text-anchor: middle; dominant-baseline: middle; }
+.opt-rest { fill: #fdecea; stroke: #f0b7ae; stroke-width: .6; }
+.opt-sheets { display: flex; flex-wrap: wrap; gap: 12px; }
+.opt-sheet { margin: 0; }
+.opt-sheet svg { width: 170px; height: auto; }
+.opt-sheet figcaption { font-size: 11px; color: var(--grijs); text-align: center; margin-top: 2px; }
+.opt-plaat { fill: #fcfbf8; stroke: var(--inkt); stroke-width: 1; }
+.opt-paneel { fill: var(--hout-l); stroke: var(--hout); stroke-width: .8; }
+.opt-paneel-txt { fill: var(--hout); font-size: 7px; text-anchor: middle; dominant-baseline: middle; }
+
 /* upload-acties */
 .upload-acties { display: flex; align-items: center; gap: 12px; justify-content: center; margin-top: 8px; }
 

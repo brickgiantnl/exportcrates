@@ -12,7 +12,7 @@
   <meta property="og:title" content="Export Crates" />
   <meta property="og:description" content="Van product naar het juiste exportkisttype — met ontwerp, tekening, optimalisatie en prijs." />
   <meta property="og:site_name" content="Export Crates" />
-  <link rel="stylesheet" href="app.css?v=20261008c" />
+  <link rel="stylesheet" href="app.css?v=20261008d" />
 </head>
 <body>
   <!-- Topbar -->
@@ -34,7 +34,7 @@
   <nav class="modnav" id="modnav">
     <button data-mod="ontwikkelen" class="actief"><span class="ic">🧭</span> Adviseur</button>
     <button data-mod="tekenen" disabled><span class="ic">📐</span> Tekenen <span class="badge">in advies</span></button>
-    <button data-mod="optimaliseren" disabled><span class="ic">📦</span> Optimaliseren <span class="badge">binnenkort</span></button>
+    <button data-mod="optimaliseren"><span class="ic">📦</span> Optimaliseren</button>
     <button data-mod="bestellen" disabled><span class="ic">🧾</span> Bestellen <span class="badge">binnenkort</span></button>
   </nav>
 
@@ -150,7 +150,21 @@
     <div class="binnenkort"><div class="ic">📐</div><h3>Tekenen</h3><p>Zit nu verwerkt in het advies. Een losse teken-/ontwerpmodule volgt.</p></div>
   </main>
   <main class="wrap hidden" id="mod-optimaliseren">
-    <div class="binnenkort"><div class="ic">📦</div><h3>Optimaliseren</h3><p>Zaagplan (plaat &amp; profiel) en container-/ladingoptimalisatie. Binnenkort.</p></div>
+    <div class="module-kop">
+      <h2>Zaagplan</h2>
+      <p>Materiaalbehoefte en zaagplan voor de geadviseerde kist: hout afkorten uit voorraadlengtes en multiplexpanelen nesten op platen.</p>
+    </div>
+    <details class="kaart aannames" style="margin-bottom:18px">
+      <summary class="kaart-kop">⚙️ Zaag-instellingen</summary>
+      <div class="kaart-body">
+        <div class="rij3">
+          <div class="veld"><label>Voorraadlengtes hout (cm)</label><input type="text" id="opt-voorraad" value="300, 400, 500"></div>
+          <div class="veld"><label>Plaat lengte × breedte (cm)</label><input type="text" id="opt-plaat" value="244 x 122"></div>
+          <div class="veld"><label>Zaagsnede (cm)</label><input type="number" id="opt-kerf" value="0.4" step="0.1" min="0"></div>
+        </div>
+      </div>
+    </details>
+    <div id="opt-inhoud"></div>
   </main>
   <main class="wrap hidden" id="mod-bestellen">
     <div class="binnenkort"><div class="ic">🧾</div><h3>Bestellen</h3><p>De bestelflow — wordt later overgezet vanuit het huidige portaal.</p></div>
@@ -199,9 +213,9 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="data/types.js?v=20261008c"></script>
-  <script src="data/typecodes.js?v=20261008c"></script>
-  <script src="engine.js?v=20261008c"></script>
-  <script src="app.js?v=20261008c"></script>
+  <script src="data/types.js?v=20261008d"></script>
+  <script src="data/typecodes.js?v=20261008d"></script>
+  <script src="engine.js?v=20261008d"></script>
+  <script src="app.js?v=20261008d"></script>
 </body>
 </html>
