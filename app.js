@@ -89,7 +89,7 @@ function klasseLabel(i) { return (TC.gewichtsklassen && TC.gewichtsklassen[i]) ?
 Engine.init(window.KIST_TYPES || {});
 const state = {
   stap: 1,
-  product: { l: 120, b: 80, h: 90, gewicht: 350, aantal: 1, oms: "", tekening: null, tekeningNaam: "" },
+  product: { l: 120, b: 80, h: 90, gewicht: 350, aantal: 1, oms: "", tekening: null, tekeningNaam: "", tekeningType: "" },
   bestemming: "", vracht: "zee",
   gekozenType: null,       // handmatige override kisttype
   gekozenFam: null,        // handmatige override familie (2-letter prefix)
@@ -129,20 +129,27 @@ function wireUpload() {
   ["dragleave", "drop"].forEach(e => zone.addEventListener(e, ev => { ev.preventDefault(); zone.classList.remove("over"); }));
   zone.addEventListener("drop", ev => { const f = ev.dataTransfer.files[0]; if (f) laadTekening(f); });
   $("btn-verwijder-tek").addEventListener("click", () => {
-    state.product.tekening = null; state.product.tekeningNaam = "";
+    state.product.tekening = null; state.product.tekeningNaam = ""; state.product.tekeningType = "";
+    $("tekening-prev").innerHTML = "";
     $("upload-preview").classList.add("hidden"); $("upload-leeg").classList.remove("hidden");
   });
 }
+// Bouwt de preview (afbeelding of PDF) uit een data-URL
+function tekeningPreviewHTML(dataUrl, type) {
+  if (!dataUrl) return "";
+  return type === "application/pdf"
+    ? `<embed src="${dataUrl}" type="application/pdf" class="tek-upload-embed" />`
+    : `<img src="${dataUrl}" class="tek-upload-img" alt="Producttekening" />`;
+}
 function laadTekening(file) {
   state.product.tekeningNaam = file.name;
-  if (file.type === "application/pdf") {
-    state.product.tekening = null;
-    $("tekening-img").src = ""; $("tekening-img").classList.add("hidden");
-  } else {
-    const reader = new FileReader();
-    reader.onload = () => { state.product.tekening = reader.result; $("tekening-img").src = reader.result; $("tekening-img").classList.remove("hidden"); };
-    reader.readAsDataURL(file);
-  }
+  state.product.tekeningType = file.type;
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.product.tekening = reader.result;                 // data-URL (afbeelding óf PDF)
+    $("tekening-prev").innerHTML = tekeningPreviewHTML(reader.result, file.type);
+  };
+  reader.readAsDataURL(file);
   $("tekening-naam").textContent = file.name;
   $("upload-leeg").classList.add("hidden"); $("upload-preview").classList.remove("hidden");
 }
@@ -447,12 +454,14 @@ function renderAdvies() {
           </div>
           <div class="muted small">Benodigde klasse voor ${fmt(p.gewicht)} kg: <strong>${esc(klasseLabel(nodigKlasse))}</strong>. Aanbevolen = lichtste/goedkoopste type dat die klasse haalt. Je kunt zelf een ander type of familie kiezen.</div>
 
-          <div class="kpi-rij" style="margin:14px 0 0">
+          <div class="kpi-rij vijf" style="margin:14px 0 0">
+            <div class="kpi"><div class="lbl">Binnenmaat <span class="hint">incl. speling</span></div><div class="val" style="font-size:16px">${fmt(bm.il)}×${fmt(bm.ib)}×${fmt(bm.ih)} <small>cm</small></div></div>
             <div class="kpi"><div class="lbl">Buitenmaat</div><div class="val" style="font-size:16px">${fmt(res.uL)}×${fmt(res.uB)}×${fmt(res.uH)} <small>cm</small></div></div>
             <div class="kpi"><div class="lbl">Volume</div><div class="val">${fmt(res.kpi.M3, 2)} <small>m³</small></div></div>
             <div class="kpi"><div class="lbl">Leeggewicht kist</div><div class="val">${fmt(tarra)} <small>kg</small></div></div>
             <div class="kpi accent"><div class="lbl">${state.vracht === "lucht" ? "Vrachtgewicht" : "Brutogewicht"}</div><div class="val">${fmt(state.vracht === "lucht" ? chargeable : bruto)} <small>kg</small></div></div>
           </div>
+          <p class="muted small" style="margin:8px 0 0">Binnenmaat = product ${fmt(p.l)}×${fmt(p.b)}×${fmt(p.h)} cm + ${fmt(CONFIG.spelingRondom)} cm speling rondom. Buitenmaat = binnenmaat + wanden/vloer/deksel van het kisttype.</p>
           ${state.vracht === "lucht" ? `<p class="muted small" style="margin:8px 0 0">Bruto ${fmt(bruto)} kg · volumegewicht ${fmt(volGew)} kg (1 m³ ≈ ${CONFIG.volumeFactorLucht} kg). Luchtvracht rekent met het hoogste.</p>` : ""}
         </div>
       </div>
@@ -512,10 +521,18 @@ function renderAdvies() {
 
   <div class="kaart" style="margin-top:18px">
     <div class="kaart-kop">Tekening <span class="muted small">— ${esc(gekozen.code)}</span></div>
-    <div class="kaart-body" id="tek-slot"></div>
+    <div class="kaart-body">
+      <div id="upload-tek-slot"></div>
+      <div id="tek-slot"></div>
+    </div>
   </div>`;
 
   $("tek-slot").innerHTML = tekenKist(res);
+  // geüploade producttekening (afbeelding of PDF) tonen boven de gegenereerde tekening
+  if (state.product.tekening) {
+    $("upload-tek-slot").innerHTML =
+      `<div class="tek-upload"><div class="tek-upload-kop">Jouw producttekening <span class="muted small">${esc(state.product.tekeningNaam)}</span></div>${tekeningPreviewHTML(state.product.tekening, state.product.tekeningType)}</div>`;
+  }
 
   // wiring
   $("a-type").addEventListener("change", e => { state.gekozenType = e.target.value; renderAdvies(); });
