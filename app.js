@@ -156,6 +156,96 @@ function laadTekening(file) {
   $("upload-leeg").classList.add("hidden"); $("upload-preview").classList.remove("hidden");
 }
 
+/* ============================ MEET-TOOL (kalibreren + meten) ============================ */
+const meet = { img: null, scale: null, pts: [], laatste: null, metingen: { l: null, b: null, h: null }, disp: 1 };
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+async function pdfNaarImage(dataUrl) {
+  const b = atob(dataUrl.split(",")[1]), arr = new Uint8Array(b.length);
+  for (let i = 0; i < b.length; i++) arr[i] = b.charCodeAt(i);
+  const pdf = await pdfjsLib.getDocument({ data: arr }).promise;
+  const page = await pdf.getPage(1);
+  const vp = page.getViewport({ scale: 2 });
+  const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height;
+  await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+  return c.toDataURL("image/png");
+}
+async function openMeetTool() {
+  if (!state.product.tekening) return;
+  meet.scale = null; meet.pts = []; meet.laatste = null; meet.metingen = { l: null, b: null, h: null };
+  let src = state.product.tekening;
+  if ((state.product.tekeningType || "") === "application/pdf") {
+    if (!window.pdfjsLib) { alert("PDF-lezer nog niet geladen — probeer zo nog eens, of upload een afbeelding."); return; }
+    try { src = await pdfNaarImage(src); } catch (e) { alert("Kon de PDF niet openen. Upload eventueel een afbeelding."); return; }
+  }
+  const img = new Image();
+  img.onload = () => { meet.img = img; $("meet-modal").classList.remove("hidden"); meetLayout(); meetDraw(); meetUpdate(); };
+  img.onerror = () => alert("Kon de afbeelding niet laden.");
+  img.src = src;
+}
+function meetLayout() {
+  const canvas = $("meet-canvas"), wrap = canvas.parentElement;
+  const maxW = wrap.clientWidth || 600, maxH = wrap.clientHeight || 520;
+  meet.disp = Math.min(maxW / meet.img.width, maxH / meet.img.height);
+  canvas.width = Math.round(meet.img.width * meet.disp);
+  canvas.height = Math.round(meet.img.height * meet.disp);
+}
+function meetPos(e) {
+  const canvas = $("meet-canvas"), rect = canvas.getBoundingClientRect();
+  return { x: (e.clientX - rect.left) * (canvas.width / rect.width) / meet.disp,
+           y: (e.clientY - rect.top) * (canvas.height / rect.height) / meet.disp };
+}
+function meetDraw() {
+  const canvas = $("meet-canvas"), ctx = canvas.getContext("2d"), d = meet.disp;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(meet.img, 0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = meet.scale == null ? "#1f6b4a" : "#c0392b"; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = 2;
+  meet.pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x * d, p.y * d, 4, 0, 7); ctx.fill(); });
+  if (meet.pts.length === 2) { ctx.beginPath(); ctx.moveTo(meet.pts[0].x * d, meet.pts[0].y * d); ctx.lineTo(meet.pts[1].x * d, meet.pts[1].y * d); ctx.stroke(); }
+}
+function meetPixelDist() { const a = meet.pts[0], b = meet.pts[1]; return Math.hypot(b.x - a.x, b.y - a.y); }
+function meetUpdate() {
+  $("meet-schaal-status").textContent = meet.scale
+    ? `Schaal ingesteld ✓ (klik nu twee punten om te meten)`
+    : (meet.pts.length === 2 ? "Vul de echte lengte in en klik 'Zet schaal'." : "Klik twee punten op een bekende maat.");
+  const kanSchaal = meet.scale == null && meet.pts.length === 2;
+  $("meet-echt").disabled = !kanSchaal; $("meet-schaal-ok").disabled = !kanSchaal;
+  $("meet-stap2").classList.toggle("meet-dim", meet.scale == null);
+  $("meet-laatste").textContent = meet.laatste != null ? fmt(meet.laatste) + " cm" : "—";
+  document.querySelectorAll(".meet-wijs").forEach(b => b.disabled = meet.laatste == null);
+  $("meet-l").textContent = meet.metingen.l != null ? fmt(meet.metingen.l) : "—";
+  $("meet-b").textContent = meet.metingen.b != null ? fmt(meet.metingen.b) : "—";
+  $("meet-h").textContent = meet.metingen.h != null ? fmt(meet.metingen.h) : "—";
+}
+function wireMeet() {
+  $("btn-meten").addEventListener("click", openMeetTool);
+  $("meet-sluit").addEventListener("click", () => $("meet-modal").classList.add("hidden"));
+  $("meet-canvas").addEventListener("click", e => {
+    const p = meetPos(e);
+    if (meet.pts.length >= 2) meet.pts = [];
+    meet.pts.push(p);
+    if (meet.pts.length === 2 && meet.scale != null) meet.laatste = Math.round(meetPixelDist() * meet.scale * 10) / 10;
+    meetDraw(); meetUpdate();
+  });
+  $("meet-schaal-ok").addEventListener("click", () => {
+    const echt = +$("meet-echt").value; if (!(echt > 0) || meet.pts.length !== 2) return;
+    const cm = $("meet-eenheid").value === "mm" ? echt / 10 : echt;
+    meet.scale = cm / meetPixelDist(); meet.pts = []; meet.laatste = null;
+    meetDraw(); meetUpdate();
+  });
+  document.querySelectorAll(".meet-wijs").forEach(b => b.addEventListener("click", () => {
+    if (meet.laatste == null) return; meet.metingen[b.dataset.dim] = meet.laatste; meetUpdate();
+  }));
+  $("meet-reset").addEventListener("click", () => { meet.scale = null; meet.pts = []; meet.laatste = null; meet.metingen = { l: null, b: null, h: null }; meetDraw(); meetUpdate(); });
+  $("meet-overnemen").addEventListener("click", () => {
+    const m = meet.metingen;
+    if (m.l != null) $("p-l").value = m.l;
+    if (m.b != null) $("p-b").value = m.b;
+    if (m.h != null) $("p-h").value = m.h;
+    $("meet-modal").classList.add("hidden");
+  });
+}
+
 /* ============================ BINNENMAAT + KEUZE ============================ */
 function binnenmaat() {
   const p = state.product, r = CONFIG.spelingRondom;
@@ -729,6 +819,7 @@ document.querySelectorAll("#modnav button").forEach(b => {
 
 /* ============================ START ============================ */
 wireUpload();
+wireMeet();
 $("naar-2").addEventListener("click", () => { leesStap1(); toonStap(2); });
 function resetOnderstel() { state.onderstel = { sbAantal: null, sbPosTxt: "", drukpunten: [], overlay: 0.65 }; }
 $("naar-3").addEventListener("click", () => { leesStap2(); state.gekozenType = null; state.gekozenFam = null; resetOnderstel(); toonStap(3); });

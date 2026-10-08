@@ -12,7 +12,7 @@
   <meta property="og:title" content="Export Crates" />
   <meta property="og:description" content="Van product naar het juiste exportkisttype — met ontwerp, tekening, optimalisatie en prijs." />
   <meta property="og:site_name" content="Export Crates" />
-  <link rel="stylesheet" href="app.css?v=20261008b" />
+  <link rel="stylesheet" href="app.css?v=20261008c" />
 </head>
 <body>
   <!-- Topbar -->
@@ -68,7 +68,10 @@
               <div id="upload-preview" class="hidden">
                 <div id="tekening-prev"></div>
                 <div class="muted small" id="tekening-naam"></div>
-                <button type="button" class="link" id="btn-verwijder-tek">Verwijderen</button>
+                <div class="upload-acties">
+                  <button type="button" class="btn ghost small-btn" id="btn-meten">📐 Maten uitlezen</button>
+                  <button type="button" class="link" id="btn-verwijder-tek">Verwijderen</button>
+                </div>
               </div>
             </div>
           </div>
@@ -155,9 +158,50 @@
 
   <!-- ?v=… = cache-busting: bump deze datum/letter bij elke wijziging zodat
        bezoekers altijd de nieuwste versie laden (statische site, geen build). -->
-  <script src="data/types.js?v=20261008b"></script>
-  <script src="data/typecodes.js?v=20261008b"></script>
-  <script src="engine.js?v=20261008b"></script>
-  <script src="app.js?v=20261008b"></script>
+  <!-- Meet-tool: tekening uitlezen door te kalibreren + meten -->
+  <div id="meet-modal" class="meet-overlay hidden">
+    <div class="meet-box">
+      <div class="meet-kop">
+        <strong>📐 Maten uitlezen uit tekening</strong>
+        <button class="meet-sluit" id="meet-sluit" title="Sluiten">✕</button>
+      </div>
+      <div class="meet-main">
+        <div class="meet-canvas-wrap"><canvas id="meet-canvas"></canvas></div>
+        <div class="meet-zij">
+          <div class="meet-stap">
+            <div class="meet-stap-kop"><span class="meet-nr" id="meet-nr1">1</span> Schaal instellen</div>
+            <p class="muted small">Klik <strong>twee punten</strong> op een bekende maat in de tekening (bijv. een maatlijn), en vul de echte lengte in.</p>
+            <div class="meet-schaal-invoer">
+              <input type="number" id="meet-echt" placeholder="echte lengte" min="0" step="0.1" disabled>
+              <select id="meet-eenheid"><option value="mm">mm</option><option value="cm" selected>cm</option></select>
+              <button class="btn ghost small-btn" id="meet-schaal-ok" disabled>Zet schaal</button>
+            </div>
+            <div class="muted small" id="meet-schaal-status">Nog geen schaal ingesteld.</div>
+          </div>
+          <div class="meet-stap" id="meet-stap2">
+            <div class="meet-stap-kop"><span class="meet-nr" id="meet-nr2">2</span> Meten</div>
+            <p class="muted small">Klik twee punten; de afstand verschijnt. Wijs toe aan L/B/H.</p>
+            <div class="meet-meting">Laatste meting: <strong id="meet-laatste">—</strong></div>
+            <div class="meet-toewijs">
+              <button class="btn ghost small-btn meet-wijs" data-dim="l" disabled>→ Lengte</button>
+              <button class="btn ghost small-btn meet-wijs" data-dim="b" disabled>→ Breedte</button>
+              <button class="btn ghost small-btn meet-wijs" data-dim="h" disabled>→ Hoogte</button>
+            </div>
+          </div>
+          <div class="meet-resultaat">L <strong id="meet-l">—</strong> · B <strong id="meet-b">—</strong> · H <strong id="meet-h">—</strong> cm</div>
+          <div class="meet-acties">
+            <button class="btn ghost" id="meet-reset">Opnieuw</button>
+            <button class="btn primair" id="meet-overnemen">Overnemen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="data/types.js?v=20261008c"></script>
+  <script src="data/typecodes.js?v=20261008c"></script>
+  <script src="engine.js?v=20261008c"></script>
+  <script src="app.js?v=20261008c"></script>
 </body>
 </html>
