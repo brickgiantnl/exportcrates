@@ -93,6 +93,8 @@ const state = {
   bestemming: "", vracht: "zee",
   gekozenType: null,       // handmatige override kisttype
   gekozenFam: null,        // handmatige override familie (2-letter prefix)
+  // onderstel & drukpunten (voor positioneren heftruckbalken / sleebalken)
+  onderstel: { sbAantal: null, sbPosTxt: "", drukpunten: [], overlay: 0.65 },
 };
 
 /* ============================ STAP-NAVIGATIE ============================ */
@@ -173,10 +175,14 @@ function standaardFam() {
   return aanwezig.includes(wens) ? wens : aanwezig[0];
 }
 function kistVoor(code) {
-  const bm = binnenmaat();
+  const bm = binnenmaat(), o = state.onderstel;
+  const sbPos = o.sbPosTxt
+    ? o.sbPosTxt.split(/[,; ]+/).map(Number).filter(n => !isNaN(n))
+    : null;
   return Engine.berekenKist(code, {
     il: bm.il, ib: bm.ib, ih: bm.ih, aantal: state.product.aantal,
     uithouders: false, uitvullen: false, materiaal: "multiplex",
+    sbAantal: o.sbAantal || null, sbPos,
   });
 }
 // alle types binnen een familie (prefix), met berekening + kostprijs + klasse
@@ -259,6 +265,11 @@ function tekenKist(res) {
   const skidH = Math.max(uH * 0.07, 6);            // visuele skid/onderstel-hoogte (cm)
   const nLL = 4;                                    // langsliggers
 
+  // geüploade afbeelding (alleen echte afbeeldingen; PDF kan niet als overlay)
+  const overlayImg = (state.product.tekening && (state.product.tekeningType || "").startsWith("image/"))
+    ? state.product.tekening : null;
+  const druk = state.onderstel.drukpunten || [];
+
   /* ---------- orthografische weergave ---------- */
   const ortho = (titel, w, h, binnen, opts) => {
     opts = opts || {};
@@ -266,23 +277,33 @@ function tekenKist(res) {
     const W = w * s + pad * 2, H = h * s + pad * 2, ox = pad, oy = pad;
     const X = cm => ox + cm * s, Y = cm => oy + cm * s;        // vanaf linksboven kist
     const YB = cm => oy + h * s - cm * s;                       // vanaf onderkant kist
-    let extra = opts.draw ? opts.draw({ X, Y, YB, s, ox, oy, w, h }) : "";
+    const extra = opts.draw ? opts.draw({ X, Y, YB, s, ox, oy, w, h }) : "";
     // product (gestreept); bij aanzichten op de bodem, bovenaanzicht gecentreerd
     const iw = binnen.w * s, ih = binnen.h * s;
     const ix = ox + (w * s - iw) / 2;
     const iy = binnen.opBodem ? (oy + h * s - ih - (opts.vloerCm || 0) * s) : (oy + (h * s - ih) / 2);
-    const prod = `<rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" class="tk-prod" rx="1"/>
-      <text x="${ix + iw / 2}" y="${iy + ih / 2}" class="tk-prodtxt">product</text>`;
-    return `<figure class="tek-fig"><svg viewBox="0 0 ${W} ${H}" class="tek-svg" preserveAspectRatio="xMidYMid meet">
+    const overlay = opts.overlay
+      ? `<image href="${opts.overlay}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" opacity="${opts.overlayOpacity}" preserveAspectRatio="none"/>` : "";
+    const prod = `<rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" class="tk-prod" rx="1"/>` +
+      (opts.overlay ? "" : `<text x="${ix + iw / 2}" y="${iy + ih / 2}" class="tk-prodtxt">product</text>`);
+    const drukM = (opts.drukpunten || []).map((d, i) =>
+      `<g class="tk-druk"><circle cx="${X(d.x)}" cy="${Y(d.y)}" r="5.5"/><text x="${X(d.x)}" y="${Y(d.y)}">${i + 1}</text></g>`).join("");
+    const attrs = opts.klikbaar
+      ? `id="${opts.svgId}" class="tek-svg klikbaar" data-ox="${ox}" data-oy="${oy}" data-s="${s}" data-w="${w}" data-h="${h}"`
+      : `class="tek-svg"`;
+    return `<figure class="tek-fig"><svg viewBox="0 0 ${W} ${H}" ${attrs} preserveAspectRatio="xMidYMid meet">
       <rect x="${ox}" y="${oy}" width="${w * s}" height="${h * s}" class="tk-kist"/>
-      ${extra}${prod}
+      ${extra}${overlay}${prod}${drukM}
       ${dimH(ox, ox + w * s, oy + h * s + 20, fmt(w) + " cm")}
       ${dimV(oy, oy + h * s, ox - 18, fmt(h) + " cm")}
     </svg><figcaption>${titel}</figcaption></figure>`;
   };
 
-  // bovenaanzicht (bodem/onderstel): langsliggers (lengte) + sleebalken (dwars)
-  const boven = ortho("Bovenaanzicht — bodem", uL, uB, { w: p.l, h: p.b, opBodem: false }, {
+  // bovenaanzicht (bodem/onderstel): langsliggers (lengte) + sleebalken (dwars),
+  // met overlay-afbeelding + drukpunten; klikbaar om drukpunten te plaatsen.
+  const boven = ortho("Bovenaanzicht — bodem · klik voor drukpunt", uL, uB, { w: p.l, h: p.b, opBodem: false }, {
+    overlay: overlayImg, overlayOpacity: state.onderstel.overlay, drukpunten: druk,
+    klikbaar: true, svgId: "svg-boven",
     draw: ({ X, Y, s }) => {
       let g = "";
       for (let i = 0; i < nLL; i++) {               // 4 langsliggers over de breedte
@@ -291,6 +312,7 @@ function tekenKist(res) {
       }
       sbPos.forEach(x => {                           // sleebalken dwars (volle breedte)
         g += `<rect x="${X(x - sbW / 2)}" y="${Y(0)}" width="${sbW * s}" height="${uB * s}" class="tk-sb2"/>`;
+        g += `<text x="${X(x)}" y="${Y(uB) + 11}" class="tk-sblabel">${fmt(x)}</text>`;
       });
       return g;
     }
@@ -336,6 +358,11 @@ function wandKlampen(ox, oy, w, h, nVert) {
   // bovenklamp
   g += `<line x1="${ox + 3}" y1="${oy + 10}" x2="${ox + w - 3}" y2="${oy + 10}" class="tk-klamp"/>`;
   return g;
+}
+
+// is er een afbeelding (geen PDF) die als overlay in de kist kan?
+function overlayBeschikbaar() {
+  return !!(state.product.tekening && (state.product.tekeningType || "").startsWith("image/"));
 }
 
 // isometrische 3D-weergave
@@ -520,8 +547,23 @@ function renderAdvies() {
   </div>
 
   <div class="kaart" style="margin-top:18px">
-    <div class="kaart-kop">Tekening <span class="muted small">— ${esc(gekozen.code)}</span></div>
+    <div class="kaart-kop">Tekening &amp; onderstel <span class="muted small">— ${esc(gekozen.code)}</span></div>
     <div class="kaart-body">
+      <div class="onderstel-panel">
+        <div class="op-rij">
+          <div class="veld"><label>Aantal heftruckbalken <span class="hint">(leeg = auto)</span></label>
+            <input type="number" id="o-aantal" min="1" step="1" value="${state.onderstel.sbAantal || ""}" placeholder="auto"></div>
+          <div class="veld"><label>Posities vanaf links (cm) <span class="hint">(leeg = auto)</span></label>
+            <input type="text" id="o-pos" value="${esc(state.onderstel.sbPosTxt)}" placeholder="bv. 30, 120, 210"></div>
+        </div>
+        <div class="op-acties">
+          <button type="button" class="btn ghost small-btn" id="o-auto">↺ Auto</button>
+          <button type="button" class="btn ghost small-btn" id="o-onder-druk">Balken onder drukpunten</button>
+          <button type="button" class="btn ghost small-btn" id="o-wis-druk">Drukpunten wissen (${(state.onderstel.drukpunten || []).length})</button>
+          ${overlayBeschikbaar() ? `<label class="op-slider">Tekening-overlay <input type="range" id="o-overlay" min="0" max="1" step="0.05" value="${state.onderstel.overlay}"></label>` : ""}
+        </div>
+        <p class="muted small" style="margin:2px 0 0">Klik in het <strong>bovenaanzicht</strong> om een drukpunt te plaatsen. Zet daarna de heftruckbalken op posities (of gebruik "Balken onder drukpunten").${overlayBeschikbaar() ? "" : " Upload een <strong>afbeelding</strong> (foto/PNG/JPG) bij stap 1 om 'm als overlay in de kist te leggen; een PDF kan niet als overlay."}</p>
+      </div>
       <div id="upload-tek-slot"></div>
       <div id="tek-slot"></div>
     </div>
@@ -547,6 +589,34 @@ function renderAdvies() {
         if (open) { const d = $(id) && $(id).closest("details"); if (d) d.open = true; }
       });
     });
+
+  // --- onderstel & drukpunten ---
+  const O = state.onderstel;
+  $("o-aantal").addEventListener("change", e => {
+    const v = parseInt(e.target.value, 10); O.sbAantal = v > 0 ? v : null; O.sbPosTxt = ""; renderAdvies();
+  });
+  $("o-pos").addEventListener("change", e => { O.sbPosTxt = e.target.value.trim(); renderAdvies(); });
+  $("o-auto").addEventListener("click", () => { O.sbAantal = null; O.sbPosTxt = ""; renderAdvies(); });
+  $("o-wis-druk").addEventListener("click", () => { O.drukpunten = []; renderAdvies(); });
+  $("o-onder-druk").addEventListener("click", () => {
+    if (!O.drukpunten.length) return;
+    const xs = [...new Set(O.drukpunten.map(d => Math.round(d.x)))].sort((a, b) => a - b);
+    O.sbPosTxt = xs.join(", "); O.sbAantal = null; renderAdvies();
+  });
+  const ov = $("o-overlay"); if (ov) ov.addEventListener("input", e => { O.overlay = +e.target.value; renderAdvies(); });
+
+  // klik in het bovenaanzicht → drukpunt plaatsen
+  const svg = $("svg-boven");
+  if (svg) svg.addEventListener("click", e => {
+    const rect = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+    const px = (e.clientX - rect.left) * (vb.width / rect.width);
+    const py = (e.clientY - rect.top) * (vb.height / rect.height);
+    const ox = +svg.dataset.ox, oy = +svg.dataset.oy, s = +svg.dataset.s, w = +svg.dataset.w, h = +svg.dataset.h;
+    const xcm = (px - ox) / s, ycm = (py - oy) / s;
+    if (xcm < -2 || xcm > w + 2 || ycm < -2 || ycm > h + 2) return;   // buiten de kist
+    O.drukpunten.push({ x: Math.max(0, Math.min(w, Math.round(xcm * 10) / 10)), y: Math.max(0, Math.min(h, Math.round(ycm * 10) / 10)) });
+    renderAdvies();
+  });
 }
 
 /* ============================ MODULE-NAV ============================ */
@@ -563,10 +633,11 @@ document.querySelectorAll("#modnav button").forEach(b => {
 /* ============================ START ============================ */
 wireUpload();
 $("naar-2").addEventListener("click", () => { leesStap1(); toonStap(2); });
-$("naar-3").addEventListener("click", () => { leesStap2(); state.gekozenType = null; state.gekozenFam = null; toonStap(3); });
+function resetOnderstel() { state.onderstel = { sbAantal: null, sbPosTxt: "", drukpunten: [], overlay: 0.65 }; }
+$("naar-3").addEventListener("click", () => { leesStap2(); state.gekozenType = null; state.gekozenFam = null; resetOnderstel(); toonStap(3); });
 $("terug-1").addEventListener("click", () => toonStap(1));
 $("terug-2").addEventListener("click", () => toonStap(2));
-$("opnieuw").addEventListener("click", () => { state.gekozenType = null; state.gekozenFam = null; toonStap(1); });
+$("opnieuw").addEventListener("click", () => { state.gekozenType = null; state.gekozenFam = null; resetOnderstel(); toonStap(1); });
 $("btn-print").addEventListener("click", () => window.print());
 document.querySelectorAll("#stepper li").forEach(li =>
   li.addEventListener("click", () => { const s = +li.dataset.step; if (s < state.stap) toonStap(s); }));

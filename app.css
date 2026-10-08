@@ -206,6 +206,19 @@ table.lijst tr:last-child td { border-bottom: 0; }
 @media (max-width: 1100px) { .advies-kaart .kpi-rij, .advies-kaart .kpi-rij.vijf { grid-template-columns: 1fr 1fr 1fr; } }
 @media (max-width: 620px) { .advies-kaart .kpi-rij, .advies-kaart .kpi-rij.vijf { grid-template-columns: 1fr 1fr; } }
 
+/* onderstel & drukpunten */
+.onderstel-panel { background: var(--bg); border: 1px solid var(--lijn); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+.op-rij { display: grid; grid-template-columns: 180px 1fr; gap: 12px; }
+@media (max-width: 560px) { .op-rij { grid-template-columns: 1fr; } }
+.onderstel-panel .veld { margin-bottom: 8px; }
+.op-acties { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.small-btn { padding: 6px 11px !important; font-size: 13px; }
+.op-slider { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--grijs); margin-left: auto; }
+.tek-svg.klikbaar { cursor: crosshair; }
+.tk-druk circle { fill: var(--rood); stroke: #fff; stroke-width: 1.5; }
+.tk-druk text { fill: #fff; font-size: 7px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
+.tk-sblabel { fill: var(--groen-d); font-size: 8px; text-anchor: middle; font-weight: 600; }
+
 /* geüploade producttekening in het advies */
 .tek-upload { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px dashed var(--lijn); }
 .tek-upload-kop { font-size: 12px; font-weight: 600; color: var(--grijs); margin-bottom: 8px; }
