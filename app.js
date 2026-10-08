@@ -286,14 +286,24 @@ function tekenKist(res) {
       ? `<image href="${opts.overlay}" x="${ix}" y="${iy}" width="${iw}" height="${ih}" opacity="${opts.overlayOpacity}" preserveAspectRatio="none"/>` : "";
     const prod = `<rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" class="tk-prod" rx="1"/>` +
       (opts.overlay ? "" : `<text x="${ix + iw / 2}" y="${iy + ih / 2}" class="tk-prodtxt">product</text>`);
-    const drukM = (opts.drukpunten || []).map((d, i) =>
-      `<g class="tk-druk"><circle cx="${X(d.x)}" cy="${Y(d.y)}" r="5.5"/><text x="${X(d.x)}" y="${Y(d.y)}">${i + 1}</text></g>`).join("");
+    // zwaartepunt-lijn
+    const cogSvg = opts.cog
+      ? `<line x1="${X(opts.cog.x)}" y1="${oy - 4}" x2="${X(opts.cog.x)}" y2="${oy + h * s + 4}" class="tk-cog-lijn"/>
+         <text class="tk-cog-txt" x="${X(opts.cog.x)}" y="${oy - 8}">ZP ${fmt(opts.cog.x)}</text>` : "";
+    // drukpunten: maatlijn-kruis + sleepbaar punt + coördinaat
+    const drukM = (opts.drukpunten || []).map((d, i) => {
+      const cx = X(d.x), cy = Y(d.y);
+      return `<line x1="${cx}" y1="${oy}" x2="${cx}" y2="${oy + h * s}" class="tk-druk-lijn"/>
+        <line x1="${ox}" y1="${cy}" x2="${ox + w * s}" y2="${cy}" class="tk-druk-lijn"/>
+        <g class="tk-druk" data-kind="druk" data-i="${i}"><circle cx="${cx}" cy="${cy}" r="5.5"/><text x="${cx}" y="${cy}">${i + 1}</text></g>
+        <text class="tk-druk-coord" x="${cx + 8}" y="${cy - 7}">${fmt(d.x)};${fmt(d.y)}</text>`;
+    }).join("");
     const attrs = opts.klikbaar
       ? `id="${opts.svgId}" class="tek-svg klikbaar" data-ox="${ox}" data-oy="${oy}" data-s="${s}" data-w="${w}" data-h="${h}"`
       : `class="tek-svg"`;
     return `<figure class="tek-fig"><svg viewBox="0 0 ${W} ${H}" ${attrs} preserveAspectRatio="xMidYMid meet">
       <rect x="${ox}" y="${oy}" width="${w * s}" height="${h * s}" class="tk-kist"/>
-      ${extra}${overlay}${prod}${drukM}
+      ${extra}${overlay}${prod}${cogSvg}${drukM}
       ${dimH(ox, ox + w * s, oy + h * s + 20, fmt(w) + " cm")}
       ${dimV(oy, oy + h * s, ox - 18, fmt(h) + " cm")}
     </svg><figcaption>${titel}</figcaption></figure>`;
@@ -301,8 +311,8 @@ function tekenKist(res) {
 
   // bovenaanzicht (bodem/onderstel): langsliggers (lengte) + sleebalken (dwars),
   // met overlay-afbeelding + drukpunten; klikbaar om drukpunten te plaatsen.
-  const boven = ortho("Bovenaanzicht — bodem · klik voor drukpunt", uL, uB, { w: p.l, h: p.b, opBodem: false }, {
-    overlay: overlayImg, overlayOpacity: state.onderstel.overlay, drukpunten: druk,
+  const boven = ortho("Bovenaanzicht — bodem · klik voor drukpunt, sleep om te verplaatsen", uL, uB, { w: p.l, h: p.b, opBodem: false }, {
+    overlay: overlayImg, overlayOpacity: state.onderstel.overlay, drukpunten: druk, cog: zwaartepunt(),
     klikbaar: true, svgId: "svg-boven",
     draw: ({ X, Y, s }) => {
       let g = "";
@@ -310,9 +320,9 @@ function tekenKist(res) {
         const yc = uB * (i + 0.5) / nLL, hh = Math.max(2.5 * s, 3);
         g += `<rect x="${X(0)}" y="${Y(yc) - hh / 2}" width="${uL * s}" height="${hh}" class="tk-ll"/>`;
       }
-      sbPos.forEach(x => {                           // sleebalken dwars (volle breedte)
-        g += `<rect x="${X(x - sbW / 2)}" y="${Y(0)}" width="${sbW * s}" height="${uB * s}" class="tk-sb2"/>`;
-        g += `<text x="${X(x)}" y="${Y(uB) + 11}" class="tk-sblabel">${fmt(x)}</text>`;
+      sbPos.forEach((x, idx) => {                    // sleebalken dwars (volle breedte), sleepbaar
+        g += `<rect x="${X(x - sbW / 2)}" y="${Y(0)}" width="${sbW * s}" height="${uB * s}" class="tk-sb2" data-kind="balk" data-i="${idx}"/>`;
+        g += `<text x="${X(x)}" y="${Y(uB) + 11}" class="tk-sblabel" data-i="${idx}">${fmt(x)}</text>`;
       });
       return g;
     }
@@ -320,7 +330,7 @@ function tekenKist(res) {
 
   // zijaanzicht (lengte × hoogte): wand met klampen + onderstel + skids
   const zij = ortho("Zijaanzicht", uL, uH, { w: p.l, h: p.h, opBodem: true, }, {
-    vloerCm: skidH,
+    vloerCm: skidH, overlay: overlayImg, overlayOpacity: state.onderstel.overlay,
     draw: ({ X, Y, YB, s, ox, oy }) => {
       let g = wandKlampen(ox, oy, uL * s, uH * s, 3);
       g += `<rect x="${X(0)}" y="${YB(skidH)}" width="${uL * s}" height="${skidH * s}" class="tk-floor"/>`;
@@ -333,7 +343,7 @@ function tekenKist(res) {
 
   // kopaanzicht (breedte × hoogte)
   const kop = ortho("Kopaanzicht", uB, uH, { w: p.b, h: p.h, opBodem: true }, {
-    vloerCm: skidH,
+    vloerCm: skidH, overlay: overlayImg, overlayOpacity: state.onderstel.overlay,
     draw: ({ X, Y, YB, s, ox, oy }) => {
       let g = wandKlampen(ox, oy, uB * s, uH * s, 2);
       g += `<rect x="${X(0)}" y="${YB(skidH)}" width="${uB * s}" height="${skidH * s}" class="tk-floor"/>`;
@@ -562,7 +572,8 @@ function renderAdvies() {
           <button type="button" class="btn ghost small-btn" id="o-wis-druk">Drukpunten wissen (${(state.onderstel.drukpunten || []).length})</button>
           ${overlayBeschikbaar() ? `<label class="op-slider">Tekening-overlay <input type="range" id="o-overlay" min="0" max="1" step="0.05" value="${state.onderstel.overlay}"></label>` : ""}
         </div>
-        <p class="muted small" style="margin:2px 0 0">Klik in het <strong>bovenaanzicht</strong> om een drukpunt te plaatsen. Zet daarna de heftruckbalken op posities (of gebruik "Balken onder drukpunten").${overlayBeschikbaar() ? "" : " Upload een <strong>afbeelding</strong> (foto/PNG/JPG) bij stap 1 om 'm als overlay in de kist te leggen; een PDF kan niet als overlay."}</p>
+        <p class="muted small" style="margin:2px 0 0">Klik in het <strong>bovenaanzicht</strong> om een drukpunt te plaatsen; <strong>sleep</strong> drukpunten of balken om ze exact te positioneren. Typ hieronder de exacte maat in.${overlayBeschikbaar() ? "" : " Upload een <strong>afbeelding</strong> (foto/PNG/JPG) bij stap 1 om 'm als overlay in de kist te leggen; een PDF kan niet als overlay."}</p>
+        ${drukTabelHTML(res)}
       </div>
       <div id="upload-tek-slot"></div>
       <div id="tek-slot"></div>
@@ -608,15 +619,101 @@ function renderAdvies() {
   // klik in het bovenaanzicht → drukpunt plaatsen
   const svg = $("svg-boven");
   if (svg) svg.addEventListener("click", e => {
+    if (e.target.closest("[data-kind]")) return;                      // op balk/drukpunt geklikt
     const rect = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
     const px = (e.clientX - rect.left) * (vb.width / rect.width);
     const py = (e.clientY - rect.top) * (vb.height / rect.height);
     const ox = +svg.dataset.ox, oy = +svg.dataset.oy, s = +svg.dataset.s, w = +svg.dataset.w, h = +svg.dataset.h;
+    if (svg._sleepte) { svg._sleepte = false; return; }               // net gesleept → geen nieuw punt
     const xcm = (px - ox) / s, ycm = (py - oy) / s;
     if (xcm < -2 || xcm > w + 2 || ycm < -2 || ycm > h + 2) return;   // buiten de kist
-    O.drukpunten.push({ x: Math.max(0, Math.min(w, Math.round(xcm * 10) / 10)), y: Math.max(0, Math.min(h, Math.round(ycm * 10) / 10)) });
+    O.drukpunten.push({ x: Math.max(0, Math.min(w, Math.round(xcm * 10) / 10)), y: Math.max(0, Math.min(h, Math.round(ycm * 10) / 10)), gewicht: 0 });
     renderAdvies();
   });
+  if (svg) wireSleep(svg, res);
+
+  // drukpunten-tabel wiring
+  state.onderstel.drukpunten.forEach((d, i) => {
+    const bind = (cls, key) => { const el = document.querySelector(`.${cls}[data-i="${i}"]`); if (el) el.addEventListener("change", e => { d[key] = +e.target.value || 0; renderAdvies(); }); };
+    bind("dp-x", "x"); bind("dp-y", "y"); bind("dp-kg", "gewicht");
+    const del = document.querySelector(`.dp-del[data-i="${i}"]`);
+    if (del) del.addEventListener("click", () => { state.onderstel.drukpunten.splice(i, 1); renderAdvies(); });
+  });
+}
+
+// zwaartepunt (center of gravity) uit drukpunten met gewicht
+function zwaartepunt() {
+  const d = (state.onderstel.drukpunten || []).filter(p => p.gewicht > 0);
+  const W = d.reduce((a, p) => a + p.gewicht, 0);
+  if (!W) return null;
+  return { x: d.reduce((a, p) => a + p.gewicht * p.x, 0) / W, y: d.reduce((a, p) => a + p.gewicht * p.y, 0) / W, W };
+}
+
+// drukpunten-tabel (exacte X/Y/gewicht) + zwaartepunt-controle t.o.v. de balken
+function drukTabelHTML(res) {
+  const d = state.onderstel.drukpunten || [];
+  if (!d.length) return "";
+  const rows = d.map((p, i) => `<tr>
+    <td>${i + 1}</td>
+    <td><input class="dp-x" data-i="${i}" type="number" step="0.5" value="${p.x}"></td>
+    <td><input class="dp-y" data-i="${i}" type="number" step="0.5" value="${p.y}"></td>
+    <td><input class="dp-kg" data-i="${i}" type="number" step="1" value="${p.gewicht || 0}"></td>
+    <td><button type="button" class="dp-del" data-i="${i}" title="verwijderen">×</button></td></tr>`).join("");
+  const cog = zwaartepunt();
+  let foot = "";
+  if (cog) {
+    const pos = (res.sb && res.sb.pos) ? res.sb.pos : [];
+    const mn = Math.min(...pos), mx = Math.max(...pos);
+    const binnen = pos.length && cog.x >= mn - 1 && cog.x <= mx + 1;
+    const dichtst = pos.length ? Math.min(...pos.map(x => Math.abs(x - cog.x))) : null;
+    foot = `<div class="druk-cog ${binnen ? "ok" : "waarsch"}">
+      <strong>Zwaartepunt: X ${fmt(cog.x)} cm</strong> · totaal ${fmt(cog.W)} kg —
+      ${binnen ? `✓ valt tussen de balken${dichtst != null ? ` (dichtstbijzijnde balk ${fmt(dichtst)} cm)` : ""}` : "⚠ valt buiten de balken — verplaats een balk eronder"}</div>`;
+  } else {
+    foot = `<div class="muted small">Vul het gewicht per drukpunt in voor het zwaartepunt en de balkcontrole.</div>`;
+  }
+  return `<table class="druk-lijst"><thead><tr><th>#</th><th>X cm</th><th>Y cm</th><th>kg</th><th></th></tr></thead><tbody>${rows}</tbody></table>${foot}`;
+}
+
+// slepen van drukpunten en heftruckbalken in het bovenaanzicht
+function wireSleep(svg, res) {
+  const O = state.onderstel;
+  const geo = () => ({ ox: +svg.dataset.ox, oy: +svg.dataset.oy, s: +svg.dataset.s, w: +svg.dataset.w, h: +svg.dataset.h });
+  const toCm = (e) => {
+    const rect = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal, g = geo();
+    const px = (e.clientX - rect.left) * (vb.width / rect.width), py = (e.clientY - rect.top) * (vb.height / rect.height);
+    return { x: (px - g.ox) / g.s, y: (py - g.oy) / g.s, g };
+  };
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(v * 10) / 10));
+  let drag = null;
+  svg.addEventListener("pointerdown", e => {
+    const t = e.target.closest("[data-kind]"); if (!t) return;
+    drag = { kind: t.dataset.kind, i: +t.dataset.i, moved: false };
+    if (drag.kind === "balk" && !O.sbPosTxt) O.sbPosTxt = (res.sb.pos || []).map(x => Math.round(x * 10) / 10).join(", ");
+    try { svg.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  svg.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const { x, y, g } = toCm(e); drag.moved = true; svg._sleepte = true;
+    if (drag.kind === "druk") {
+      const d = O.drukpunten[drag.i]; if (!d) return;
+      d.x = clamp(x, 0, g.w); d.y = clamp(y, 0, g.h);
+      const grp = svg.querySelector(`g.tk-druk[data-i="${drag.i}"]`);
+      if (grp) { const cx = g.ox + d.x * g.s, cy = g.oy + d.y * g.s; grp.querySelector("circle").setAttribute("cx", cx); grp.querySelector("circle").setAttribute("cy", cy); const tx = grp.querySelector("text"); tx.setAttribute("x", cx); tx.setAttribute("y", cy); }
+    } else if (drag.kind === "balk") {
+      const arr = O.sbPosTxt.split(/[,; ]+/).map(Number).filter(n => !isNaN(n));
+      arr[drag.i] = clamp(x, 0, g.w); O.sbPosTxt = arr.join(", ");
+      const rect = svg.querySelector(`rect.tk-sb2[data-i="${drag.i}"]`);
+      if (rect) { const sbW = (+rect.getAttribute("width")) / g.s; rect.setAttribute("x", g.ox + (arr[drag.i] - sbW / 2) * g.s); }
+      const lbl = svg.querySelector(`text.tk-sblabel[data-i="${drag.i}"]`);
+      if (lbl) { lbl.setAttribute("x", g.ox + arr[drag.i] * g.s); lbl.textContent = fmt(arr[drag.i]); }
+    }
+  });
+  const end = () => { if (drag) { const moved = drag.moved; drag = null; if (moved) renderAdvies(); } };
+  svg.addEventListener("pointerup", end);
+  svg.addEventListener("pointercancel", end);
+  svg.addEventListener("pointerleave", end);
 }
 
 /* ============================ MODULE-NAV ============================ */

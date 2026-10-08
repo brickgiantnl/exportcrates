@@ -214,10 +214,26 @@ table.lijst tr:last-child td { border-bottom: 0; }
 .op-acties { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
 .small-btn { padding: 6px 11px !important; font-size: 13px; }
 .op-slider { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--grijs); margin-left: auto; }
-.tek-svg.klikbaar { cursor: crosshair; }
+.tek-svg.klikbaar { cursor: crosshair; touch-action: none; }
+.tk-druk { cursor: move; }
 .tk-druk circle { fill: var(--rood); stroke: #fff; stroke-width: 1.5; }
 .tk-druk text { fill: #fff; font-size: 7px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
-.tk-sblabel { fill: var(--groen-d); font-size: 8px; text-anchor: middle; font-weight: 600; }
+.tk-druk-lijn { stroke: var(--rood); stroke-width: .6; stroke-dasharray: 3 3; opacity: .5; }
+.tk-druk-coord { fill: var(--rood); font-size: 8px; font-weight: 700; }
+.tk-sb2 { cursor: ew-resize; }
+.tk-sblabel { fill: var(--groen-d); font-size: 8px; text-anchor: middle; font-weight: 600; cursor: ew-resize; }
+.tk-cog-lijn { stroke: #1f3a8a; stroke-width: 1.4; stroke-dasharray: 5 3; }
+.tk-cog-txt { fill: #1f3a8a; font-size: 9px; font-weight: 700; text-anchor: middle; }
+
+/* drukpunten-tabel */
+.druk-lijst { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.druk-lijst th { font-size: 11px; color: var(--grijs); text-transform: uppercase; letter-spacing: .03em; text-align: left; padding: 2px 6px; }
+.druk-lijst td { padding: 2px 6px; border-top: 1px solid var(--lijn); }
+.druk-lijst input { width: 100%; padding: 4px 6px; }
+.druk-lijst .dp-del { border: 0; background: none; color: var(--rood); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.druk-cog { margin-top: 8px; padding: 7px 10px; border-radius: 8px; font-size: 13px; }
+.druk-cog.ok { background: var(--groen-l); color: var(--groen-d); }
+.druk-cog.waarsch { background: var(--amber-bg); color: var(--amber); }
 
 /* geüploade producttekening in het advies */
 .tek-upload { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px dashed var(--lijn); }
