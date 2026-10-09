@@ -96,7 +96,7 @@ const state = {
   // onderstel & drukpunten (voor positioneren heftruckbalken / sleebalken)
   onderstel: { sbAantal: null, sbPosTxt: "", drukpunten: [], overlay: 0.65 },
   gekozenCode: null,        // laatst geadviseerde/ gekozen kisttype (voor Optimaliseren)
-  opt: { voorraad: [300, 400, 500], plaatL: 244, plaatB: 122, kerf: 0.4 },
+  opt: { voorraad: [300, 400, 500], plaatL: 244, plaatB: 122, kerf: 0.4, eenheid: "20ft", stapelen: false, maxLagen: 2 },
 };
 
 /* ============================ STAP-NAVIGATIE ============================ */
@@ -833,14 +833,18 @@ function pack1D(stukken, voorraad, kerf) {
   return { stokken: beste.stokken, teLang, benutting: beste.bruto ? beste.netto / beste.bruto : 0, netto: beste.netto, bruto: beste.bruto };
 }
 
-// 2D nesten: plaats rechthoeken {w,h} op platen (shelf / First-Fit Decreasing Height, rotatie toegestaan)
-function pack2D(rects, SW, SH, kerf) {
+// 2D nesten — drie pogingen, de beste wint (minste platen, dan de leegste laatste plaat)
+function prep2D(rects, SW, SH) {
   const items = rects.map(r => {
     let w = r.w, h = r.h;
     if (w > SW || h > SH) { const t = w; w = h; h = t; }   // draaien als het anders niet past
     return { w, h, naam: r.naam };
-  }).filter(r => r.w <= SW + 0.01 && r.h <= SH + 0.01).sort((a, b) => b.h - a.h);
-  const teGroot = rects.length - items.length;
+  }).filter(r => r.w <= SW + 0.01 && r.h <= SH + 0.01);
+  return { items, teGroot: rects.length - items.length };
+}
+// a) strookgewijs (shelf / First-Fit Decreasing Height) — eenvoudig te zagen
+function shelf2D(items, SW, SH, kerf) {
+  items = items.slice().sort((a, b) => b.h - a.h);
   const sheets = [];
   const tryPlace = (s, it) => {
     for (const sh of s.shelves) {
@@ -859,8 +863,109 @@ function pack2D(rects, SW, SH, kerf) {
     for (const s of sheets) if (tryPlace(s, it)) { done = true; break; }
     if (!done) { const s = { rects: [], shelves: [] }; sheets.push(s); tryPlace(s, it); }
   }
-  const netto = items.reduce((a, r) => a + r.w * r.h, 0), bruto = sheets.length * SW * SH;
-  return { sheets, aantal: sheets.length, benutting: bruto ? netto / bruto : 0, netto, bruto, teGroot };
+  return sheets;
+}
+// b) MaxRects (Best Short Side Fit, met rotatie) — dichter op elkaar
+function maxRects2D(items, SW, SH, kerf, sortFn) {
+  items = items.slice().sort(sortFn);
+  const W = SW + kerf, H = SH + kerf;       // elk stuk krijgt een zaagsnede mee; de plaatrand niet
+  const sheets = [];
+  const nieuw = () => { const s = { rects: [], free: [{ x: 0, y: 0, w: W, h: H }] }; sheets.push(s); return s; };
+  const zoek = (s, w, h) => {
+    let best = null;
+    for (const f of s.free) for (const [rw, rh] of [[w, h], [h, w]]) {
+      if (rw <= f.w + 0.01 && rh <= f.h + 0.01) {
+        const kort = Math.min(f.w - rw, f.h - rh), lang = Math.max(f.w - rw, f.h - rh);
+        if (!best || kort < best.kort || (kort === best.kort && lang < best.lang)) best = { x: f.x, y: f.y, w: rw, h: rh, kort, lang };
+      }
+    }
+    return best;
+  };
+  const plaats = (s, p) => {
+    const nf = [];
+    for (const f of s.free) {
+      if (p.x >= f.x + f.w || p.x + p.w <= f.x || p.y >= f.y + f.h || p.y + p.h <= f.y) { nf.push(f); continue; }
+      if (p.x > f.x) nf.push({ x: f.x, y: f.y, w: p.x - f.x, h: f.h });
+      if (p.x + p.w < f.x + f.w) nf.push({ x: p.x + p.w, y: f.y, w: f.x + f.w - p.x - p.w, h: f.h });
+      if (p.y > f.y) nf.push({ x: f.x, y: f.y, w: f.w, h: p.y - f.y });
+      if (p.y + p.h < f.y + f.h) nf.push({ x: f.x, y: p.y + p.h, w: f.w, h: f.y + f.h - p.y - p.h });
+    }
+    // opruimen: vrije ruimtes die volledig binnen een andere vallen weg (bij duplicaten de eerste houden)
+    const binnen = (a, b) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+    s.free = nf.filter((a, i) => a.w > 0.01 && a.h > 0.01 &&
+      !nf.some((b, j) => j !== i && binnen(a, b) && (!binnen(b, a) || j < i)));
+  };
+  for (const it of items) {
+    const w = it.w + kerf, h = it.h + kerf;
+    let s = null, p = null;
+    for (const sh of sheets) { p = zoek(sh, w, h); if (p) { s = sh; break; } }
+    if (!p) { s = nieuw(); p = zoek(s, w, h); if (!p) continue; }
+    plaats(s, p);
+    s.rects.push({ x: p.x, y: p.y, w: p.w - kerf, h: p.h - kerf, naam: it.naam });
+  }
+  return sheets;
+}
+function pack2D(rects, SW, SH, kerf) {
+  const { items, teGroot } = prep2D(rects, SW, SH);
+  const netto = items.reduce((a, r) => a + r.w * r.h, 0);
+  const pogingen = [
+    { methode: "strookgewijs", sheets: shelf2D(items, SW, SH, kerf) },
+    { methode: "MaxRects (oppervlak)", sheets: maxRects2D(items, SW, SH, kerf, (a, b) => b.w * b.h - a.w * a.h) },
+    { methode: "MaxRects (langste zijde)", sheets: maxRects2D(items, SW, SH, kerf, (a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h)) },
+  ];
+  // minste platen; bij gelijk: de laatste plaat zo leeg mogelijk (grootste herbruikbare rest)
+  const laatsteVol = (sh) => sh.length ? sh[sh.length - 1].rects.reduce((a, r) => a + r.w * r.h, 0) : 0;
+  const volgorde = pogingen.slice().sort((a, b) => a.sheets.length - b.sheets.length || laatsteVol(a.sheets) - laatsteVol(b.sheets));
+  const beste = volgorde[0], bruto = beste.sheets.length * SW * SH;
+  return { sheets: beste.sheets, aantal: beste.sheets.length, benutting: bruto ? netto / bruto : 0, netto, bruto, teGroot,
+    methode: beste.methode, strook: pogingen[0].sheets.length };
+}
+
+/* ---- laden: containers / trailer (binnenmaten cm, deuropening cm, max. lading kg) ---- */
+const LAADRUIMTES = {
+  "20ft":    { naam: "20ft container",   L: 589,  B: 235, H: 239, deurB: 234, deurH: 228, kg: 28200 },
+  "40ft":    { naam: "40ft container",   L: 1203, B: 235, H: 239, deurB: 234, deurH: 228, kg: 26700 },
+  "40hc":    { naam: "40ft high cube",   L: 1203, B: 235, H: 269, deurB: 234, deurH: 258, kg: 26500 },
+  "trailer": { naam: "Trailer 13,6 m",   L: 1360, B: 245, H: 270, deurB: 245, deurH: 270, kg: 24000 },
+};
+// beste vloerindeling: rijen in oriëntatie A over de lengte, de restlengte gevuld met gedraaide kisten
+function vloerPlan(R, kL, kB) {
+  let best = { n: 0, plaats: [] };
+  for (const [a, b] of [[kL, kB], [kB, kL]]) {
+    const perRijA = Math.floor(R.B / b);
+    if (perRijA < 1) continue;
+    const maxRijen = Math.floor(R.L / a);
+    for (let rijen = maxRijen; rijen >= Math.max(0, maxRijen - 4); rijen--) {
+      const restL = R.L - rijen * a;
+      const perRijB = Math.floor(R.B / a), rijenB = perRijB >= 1 ? Math.floor(restL / b) : 0;
+      const n = rijen * perRijA + perRijB * rijenB;
+      if (n > best.n) {
+        const plaats = [];
+        for (let r = 0; r < rijen; r++) for (let c = 0; c < perRijA; c++) plaats.push({ x: r * a, y: c * b, l: a, b });
+        for (let r = 0; r < rijenB; r++) for (let c = 0; c < perRijB; c++) plaats.push({ x: rijen * a + r * b, y: c * a, l: b, b: a });
+        best = { n, plaats };
+      }
+    }
+  }
+  return best;
+}
+function laadPlan(res, key, O) {
+  const R = LAADRUIMTES[key];
+  const kL = Math.ceil(res.uL - 1e-9), kB = Math.ceil(res.uB - 1e-9), kH = Math.ceil(res.uH - 1e-9);
+  const brutoKist = res.kpi.tarra + (+state.product.gewicht || 0);
+  const pastDeur = kH <= R.deurH && Math.min(kL, kB) <= R.deurB;
+  const vloer = vloerPlan(R, kL, kB);
+  const lagen = Math.max(0, Math.min(Math.floor(R.H / kH), O.stapelen ? (O.maxLagen || 1) : 1));
+  const capVol = vloer.n * lagen;
+  const capKg = brutoKist > 0 ? Math.floor(R.kg / brutoKist) : capVol;
+  const cap = pastDeur ? Math.min(capVol, capKg) : 0;
+  const n = state.product.aantal;
+  const units = cap > 0 ? Math.ceil(n / cap) : null;
+  const inEerste = Math.min(n, cap);
+  const volBenut = cap ? (inEerste * kL * kB * kH) / (R.L * R.B * R.H) : 0;
+  const kgBenut = (inEerste * brutoKist) / R.kg;
+  return { key, R, kL, kB, kH, brutoKist, pastDeur, vloer, lagen, capVol, capKg, cap, units, inEerste, volBenut, kgBenut,
+    beperking: !pastDeur ? "past niet door de deur" : capVol === 0 ? "te groot" : capKg < capVol ? "gewicht" : "ruimte" };
 }
 
 function renderOptimalisatie() {
@@ -886,41 +991,139 @@ function renderOptimalisatie() {
   });
 
   // ---- 1D hout ----
-  let totStokken = 0, houtHtml = "";
+  let totStokken = 0, houtHtml = "", houtInkoop = 0, houtNetto = 0;
+  const inkoopRijen = [];
   Object.keys(hout).sort().forEach(key => {
     const g = hout[key], r = pack1D(g.stukken, O.voorraad, O.kerf);
+    const pm = houtPrijsPerM(g);
     totStokken += r.stokken.length;
+    houtInkoop += r.bruto / 100 * pm; houtNetto += r.netto / 100 * pm;
+    // inkooplijst per voorraadlengte
+    const perLengte = {};
+    r.stokken.forEach(s => { perLengte[s.lengte] = (perLengte[s.lengte] || 0) + 1; });
+    Object.keys(perLengte).sort((a, b) => a - b).forEach(l =>
+      inkoopRijen.push({ wat: `Hout ${fmt(g.b)}×${fmt(g.dk)} cm`, maat: `${fmt(+l, 0)} cm`, aantal: perLengte[l], eenh: "st", bedrag: perLengte[l] * l / 100 * pm }));
     // identieke stokken groeperen
     const groepen = new Map();
     r.stokken.forEach(s => { const k = s.lengte + "|" + s.stukken.map(x => Math.round(x.len * 10)).join(","); if (!groepen.has(k)) groepen.set(k, { aantal: 0, s }); groepen.get(k).aantal++; });
     const bars = [...groepen.values()].map(({ aantal, s }) => stokBar(s, O, aantal)).join("");
     houtHtml += `<div class="opt-groep">
       <div class="opt-groep-kop">Profiel ${fmt(g.b)}×${fmt(g.dk)} cm <span class="muted small">(${[...g.namen].join(", ")})</span></div>
-      <div class="opt-meta">${g.stukken.length} stuks · ${r.stokken.length} voorraadlengtes · benutting ${fmt(r.benutting * 100, 0)}% · rest ${fmt((r.bruto - r.netto) / 100)} m${r.teLang.length ? ` · <span class="rood">${r.teLang.length} te lang!</span>` : ""}</div>
+      <div class="opt-meta">${g.stukken.length} stuks · ${r.stokken.length} voorraadlengtes · benutting ${fmt(r.benutting * 100, 0)}% · rest ${fmt((r.bruto - r.netto) / 100)} m · ${euro(pm)}/m${r.teLang.length ? ` · <span class="rood">${r.teLang.length} te lang!</span>` : ""}</div>
       ${bars}</div>`;
   });
 
   // ---- 2D plaat ----
-  let totPlaten = 0, plaatHtml = "";
+  let totPlaten = 0, plaatHtml = "", plaatInkoop = 0, plaatNetto = 0;
+  const plaatM2 = O.plaatL * O.plaatB / 1e4;
   Object.keys(plaat).sort().forEach(key => {
     const g = plaat[key], r = pack2D(g.rects, O.plaatL, O.plaatB, O.kerf);
     totPlaten += r.aantal;
+    plaatInkoop += r.aantal * plaatM2 * CONFIG.prijsPlaatM2; plaatNetto += r.netto / 1e4 * CONFIG.prijsPlaatM2;
+    inkoopRijen.push({ wat: `${g.mat} ${fmt(g.dk)} cm`, maat: `${fmt(O.plaatL, 0)}×${fmt(O.plaatB, 0)} cm`, aantal: r.aantal, eenh: "plaat", bedrag: r.aantal * plaatM2 * CONFIG.prijsPlaatM2 });
     const sheets = r.sheets.slice(0, 8).map((s, i) => sheetSvg(s, O, i + 1)).join("");
+    const winst = r.strook - r.aantal;
     plaatHtml += `<div class="opt-groep">
       <div class="opt-groep-kop">${esc(g.mat)} ${fmt(g.dk)} cm</div>
-      <div class="opt-meta">${g.rects.length} panelen · ${r.aantal} platen (${fmt(O.plaatL)}×${fmt(O.plaatB)}) · benutting ${fmt(r.benutting * 100, 0)}%${r.teGroot ? ` · <span class="rood">${r.teGroot} te groot!</span>` : ""}</div>
+      <div class="opt-meta">${g.rects.length} panelen · ${r.aantal} platen (${fmt(O.plaatL)}×${fmt(O.plaatB)}) · benutting ${fmt(r.benutting * 100, 0)}% · methode: ${r.methode}${winst > 0 ? ` <span class="groen-txt">(${winst} ${winst > 1 ? "platen" : "plaat"} minder dan strookgewijs)</span>` : ""}${r.teGroot ? ` · <span class="rood">${r.teGroot} te groot!</span>` : ""}</div>
       <div class="opt-sheets">${sheets}</div>${r.aantal > 8 ? `<div class="muted small">…en nog ${r.aantal - 8} vergelijkbare platen</div>` : ""}</div>`;
   });
 
+  // ---- materiaalkosten: netto (kostprijs-model) vs. inkoop volgens zaagplan ----
+  const inkoop = houtInkoop + plaatInkoop, netto = houtNetto + plaatNetto, afval = inkoop - netto;
+  const kostTabel = `
+    <table class="lijst opt-inkoop">
+      <thead><tr><th>Inkopen</th><th>Maat</th><th class="num">Aantal</th><th class="num">Bedrag</th></tr></thead>
+      <tbody>${inkoopRijen.map(r => `<tr><td>${esc(r.wat)}</td><td>${r.maat}</td><td class="num">${r.aantal} ${r.eenh}</td><td class="num">${euro(r.bedrag)}</td></tr>`).join("")}</tbody>
+      <tfoot>
+        <tr><td colspan="3">Materiaal inkoop (hele lengtes/platen)</td><td class="num"><strong>${euro(inkoop)}</strong></td></tr>
+        <tr class="muted"><td colspan="3">waarvan netto in de kist${n > 1 ? `en (× ${n})` : ""}</td><td class="num">${euro(netto)}</td></tr>
+        <tr class="muted"><td colspan="3">waarvan zaagverlies / rest</td><td class="num">${euro(afval)} <small>(${fmt(inkoop ? afval / inkoop * 100 : 0, 0)}%)</small></td></tr>
+      </tfoot>
+    </table>
+    <p class="muted small" style="margin:8px 0 0">Prijzen uit de kostprijs-aannames van de Adviseur (hout ${CONFIG.houtPrijzen && Object.keys(CONFIG.houtPrijzen).length ? "vaste €/m" : `afgeleid uit € ${fmt(CONFIG.houtBasisM3, 0)}/m³`}, plaat ${euro(CONFIG.prijsPlaatM2)}/m²). De kostprijs in het advies rekent netto; dit is wat je werkelijk inkoopt.</p>`;
+
   el.innerHTML = `
-    <div class="kpi-rij" style="grid-template-columns:repeat(3,1fr)">
+    <div class="opt-acties"><button class="btn ghost" id="opt-print">🖨️ Werkbon afdrukken</button></div>
+    <div class="kpi-rij">
       <div class="kpi"><div class="lbl">Kist</div><div class="val" style="font-size:18px">${esc(code)}${n > 1 ? ` <small>× ${n}</small>` : ""}</div></div>
       <div class="kpi"><div class="lbl">Hout — voorraadlengtes</div><div class="val">${totStokken}</div></div>
       <div class="kpi"><div class="lbl">Platen</div><div class="val">${totPlaten}</div></div>
+      <div class="kpi accent"><div class="lbl">Materiaal inkoop</div><div class="val" style="font-size:20px">${euro(inkoop)}</div></div>
     </div>
     ${houtHtml ? `<div class="kaart"><div class="kaart-kop">Hout afkorten <span class="muted small">1D-zaagplan</span></div><div class="kaart-body">${houtHtml}</div></div>` : ""}
     ${plaatHtml ? `<div class="kaart" style="margin-top:18px"><div class="kaart-kop">Platen nesten <span class="muted small">2D-zaagplan</span></div><div class="kaart-body">${plaatHtml}</div></div>` : ""}
-    ${!houtHtml && !plaatHtml ? `<p class="muted">Geen onderdelen gevonden.</p>` : ""}`;
+    ${!houtHtml && !plaatHtml ? `<p class="muted">Geen onderdelen gevonden.</p>` : ""}
+    ${inkoopRijen.length ? `<div class="kaart" style="margin-top:18px"><div class="kaart-kop">Inkooplijst &amp; materiaalkosten</div><div class="kaart-body">${kostTabel}</div></div>` : ""}
+    <div class="kaart opt-laden" style="margin-top:18px"><div class="kaart-kop">Laden <span class="muted small">container / trailer</span></div><div class="kaart-body">${ladenHTML(res)}</div></div>`;
+  $("opt-print").addEventListener("click", () => window.print());
+  wireLaden();
+}
+
+// ---- laadplanning: vergelijk alle laadruimtes + plattegrond van de gekozen ----
+function ladenHTML(res) {
+  const O = state.opt, n = state.product.aantal;
+  const plannen = Object.keys(LAADRUIMTES).map(k => laadPlan(res, k, O));
+  const pl = plannen.find(p => p.key === O.eenheid) || plannen[0];
+  const rijen = plannen.map(p => `
+    <tr class="${p.key === pl.key ? "actief" : ""}" data-eenheid="${p.key}">
+      <td><strong>${p.R.naam}</strong><br><span class="muted small">${fmt(p.R.L, 0)}×${fmt(p.R.B, 0)}×${fmt(p.R.H, 0)} cm</span></td>
+      <td class="num">${p.cap ? `${p.vloer.n} × ${p.lagen}` : "—"}</td>
+      <td class="num"><strong>${p.cap || "—"}</strong></td>
+      <td class="num">${p.units ?? "—"}</td>
+      <td class="num">${p.cap ? fmt(p.volBenut * 100, 0) + "%" : "—"}</td>
+      <td>${p.cap ? `<span class="muted small">beperkt door ${p.beperking}</span>` : `<span class="rood">${p.beperking}</span>`}</td>
+    </tr>`).join("");
+  return `
+    <div class="rij3 laad-inst">
+      <div class="veld"><label>Laadruimte</label><select id="opt-eenheid">${Object.keys(LAADRUIMTES).map(k => `<option value="${k}" ${k === pl.key ? "selected" : ""}>${LAADRUIMTES[k].naam}</option>`).join("")}</select></div>
+      <div class="veld"><label class="vink" style="margin-top:22px"><input type="checkbox" id="opt-stapel" ${O.stapelen ? "checked" : ""}><span>Kisten stapelbaar</span></label></div>
+      <div class="veld"><label>Max. lagen</label><input type="number" id="opt-lagen" min="1" max="5" value="${O.maxLagen}" ${O.stapelen ? "" : "disabled"}></div>
+    </div>
+    <p class="muted small" style="margin:0 0 10px">Kist ${fmt(pl.kL, 0)}×${fmt(pl.kB, 0)}×${fmt(pl.kH, 0)} cm · bruto ${fmt(pl.brutoKist, 0)} kg per kist · ${n} kist${n > 1 ? "en" : ""} te verladen.</p>
+    <table class="lijst laad-tabel">
+      <thead><tr><th>Laadruimte</th><th class="num">Vloer × lagen</th><th class="num">Per stuk</th><th class="num">Nodig</th><th class="num">Vulling</th><th></th></tr></thead>
+      <tbody>${rijen}</tbody>
+    </table>
+    ${pl.cap ? laadSvg(pl) : `<div class="banner fout" style="margin-top:12px"><span class="ic">⛔</span><div>Deze kist past niet in een ${pl.R.naam} (${pl.beperking}).</div></div>`}`;
+}
+
+function laadSvg(p) {
+  const R = p.R, n = state.product.aantal;
+  const W = 760, sc = (W - 20) / R.L, H = R.B * sc;
+  const perLaag = p.vloer.n, inEerste = p.inEerste;
+  // per vloerpositie: hoeveel kisten staan erop (gestapeld)
+  const stapel = p.vloer.plaats.map((_, i) => { let c = 0; for (let l = 0; l < p.lagen; l++) if (l * perLaag + i < inEerste) c++; return c; });
+  const kisten = p.vloer.plaats.map((k, i) => {
+    const c = stapel[i], x = 10 + k.x * sc, y = 10 + k.y * sc, w = k.l * sc, h = k.b * sc;
+    return `<rect x="${x + 1}" y="${y + 1}" width="${w - 2}" height="${h - 2}" class="${c ? "laad-kist" : "laad-leeg"}"/>
+      ${c && w > 26 ? `<text x="${x + w / 2}" y="${y + h / 2}" class="laad-txt">${c > 1 ? c + "×" : ""}${fmt(k.l, 0)}×${fmt(k.b, 0)}</text>` : ""}`;
+  }).join("");
+  const kgVol = inEerste * p.brutoKist;
+  return `
+    <div class="laad-plan">
+      <svg viewBox="0 0 ${W} ${H + 34}" class="laad-svg" style="max-width:${Math.max(45, R.L / 1360 * 100)}%">
+        <rect x="10" y="10" width="${R.L * sc}" height="${H}" class="laad-ruimte"/>
+        ${kisten}
+        <line x1="${10 + R.L * sc}" y1="10" x2="${10 + R.L * sc}" y2="${10 + H}" class="laad-deur"/>
+        <text x="${10 + R.L * sc - 4}" y="${H + 26}" class="laad-lbl" text-anchor="end">deuren →</text>
+        <text x="10" y="${H + 26}" class="laad-lbl">${R.naam} · bovenaanzicht · ${inEerste} kist${inEerste > 1 ? "en" : ""} in de eerste${p.units > 1 ? ` (totaal ${p.units} nodig, laatste met ${n - (p.units - 1) * p.cap})` : ""}</text>
+      </svg>
+      <div class="laad-meters">
+        <div><span class="lbl">Volume</span><div class="meter"><i style="width:${Math.min(100, p.volBenut * 100)}%"></i></div><span>${fmt(p.volBenut * 100, 0)}%</span></div>
+        <div><span class="lbl">Gewicht</span><div class="meter ${p.kgBenut > 0.95 ? "vol" : ""}"><i style="width:${Math.min(100, p.kgBenut * 100)}%"></i></div><span>${fmt(kgVol, 0)} / ${fmt(R.kg, 0)} kg</span></div>
+      </div>
+      ${p.lagen > 1 ? `<p class="muted small" style="margin:6px 0 0">Gestapeld tot ${p.lagen} lagen — controleer of de kistdeksel de bovenlast (${fmt(p.brutoKist * (p.lagen - 1), 0)} kg) kan dragen.</p>` : ""}
+    </div>`;
+}
+
+function wireLaden() {
+  const sel = $("opt-eenheid"); if (!sel) return;
+  sel.addEventListener("change", () => { state.opt.eenheid = sel.value; renderOptimalisatie(); });
+  $("opt-stapel").addEventListener("change", e => { state.opt.stapelen = e.target.checked; renderOptimalisatie(); });
+  $("opt-lagen").addEventListener("change", e => { state.opt.maxLagen = Math.max(1, Math.min(5, +e.target.value || 1)); renderOptimalisatie(); });
+  document.querySelectorAll(".laad-tabel tbody tr").forEach(tr =>
+    tr.addEventListener("click", () => { state.opt.eenheid = tr.dataset.eenheid; renderOptimalisatie(); }));
 }
 
 // visuele voorraadlengte-balk (1D)

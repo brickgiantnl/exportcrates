@@ -333,7 +333,35 @@ details.aannames summary::-webkit-details-marker { display: none; }
 details.aannames[open] summary { border-bottom: 1px solid var(--lijn); }
 
 /* ---------- Print ---------- */
+
+.groen-txt { color: var(--groen-d); font-weight: 600; }
+.opt-acties { display: flex; justify-content: flex-end; margin: -6px 0 12px; }
+table.lijst tfoot td { border-bottom: 0; padding-top: 6px; }
+table.lijst tfoot tr:first-child td { border-top: 2px solid var(--lijn); }
+table.lijst tfoot tr.muted td { color: var(--grijs); padding-top: 2px; }
+/* laden */
+.laad-tabel tbody tr { cursor: pointer; }
+.laad-tabel tbody tr:hover td { background: var(--bg); }
+.laad-tabel tbody tr.actief td { background: var(--groen-l); }
+.laad-plan { margin-top: 14px; }
+.laad-svg { width: 100%; height: auto; display: block; }
+.laad-ruimte { fill: #f4f2ec; stroke: var(--inkt); stroke-width: 1.5; }
+.laad-kist { fill: var(--hout-l); stroke: var(--hout); stroke-width: 1; }
+.laad-leeg { fill: none; stroke: #c9c3b5; stroke-width: .8; stroke-dasharray: 4 3; }
+.laad-txt { fill: var(--hout); font-size: 10px; text-anchor: middle; dominant-baseline: middle; }
+.laad-deur { stroke: var(--groen); stroke-width: 4; }
+.laad-lbl { fill: var(--grijs); font-size: 11px; }
+.laad-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; font-size: 13px; }
+.laad-meters > div { display: flex; align-items: center; gap: 8px; }
+.laad-meters .lbl { color: var(--grijs); width: 60px; }
+.meter { flex: 1; height: 8px; background: var(--lijn); border-radius: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--groen); }
+.meter.vol i { background: var(--rood); }
+@media (max-width: 620px) { .laad-meters { grid-template-columns: 1fr; } }
+
 @media print {
+  #mod-optimaliseren .aannames, .laad-inst { display: none !important; }
+  .opt-groep, .opt-sheet, .laad-plan { break-inside: avoid; }
   .topbar, .modnav, .config-form, button { display: none !important; }
   body { background: #fff; }
   .config-grid { grid-template-columns: 1fr; }
